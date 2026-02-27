@@ -1,8 +1,65 @@
-import { useEffect, useMemo, useState } from 'react'
-import { Alert, Card, Col, Layout, Row, Space, Statistic, Table, Tag, Typography } from 'antd'
+import {
+  BarChartOutlined,
+  ClearOutlined,
+  DeleteOutlined,
+  LeftOutlined,
+  MenuOutlined,
+  MessageOutlined,
+  PlusOutlined,
+  PushpinFilled,
+  PushpinOutlined,
+  ReloadOutlined,
+  RightOutlined,
+  RobotOutlined,
+  SendOutlined,
+  StopOutlined,
+  UserOutlined
+} from '@ant-design/icons'
+import {
+  Alert,
+  Avatar,
+  Badge,
+  Button,
+  Card,
+  Col,
+  ConfigProvider,
+  Descriptions,
+  Divider,
+  Drawer,
+  Empty,
+  Input,
+  Layout,
+  List,
+  Row,
+  Space,
+  Spin,
+  Statistic,
+  Table,
+  Tabs,
+  Tag,
+  Typography,
+  message,
+} from 'antd'
+import { useEffect, useMemo, useRef, useState } from 'react'
 
-const { Header, Content } = Layout
-const { Title, Text } = Typography
+const { Header, Content, Sider } = Layout
+const { Title, Text, Paragraph } = Typography
+const { TextArea, Search } = Input
+
+const STORAGE_KEY = 'gtos_chat_sessions_v2'
+
+function newSession() {
+  const id = `s_${Date.now()}_${Math.random().toString(16).slice(2, 8)}`
+  return {
+    id,
+    title: '新会话',
+    pinned: false,
+    createdAt: Date.now(),
+    updatedAt: Date.now(),
+    lastPayload: null,
+    messages: [{ role: 'assistant', content: '你好，我是 GTOS 助手。请直接告诉我任务目标。', ts: Date.now() }],
+  }
+}
 
 async function safeFetch(path) {
   try {
@@ -14,18 +71,78 @@ async function safeFetch(path) {
   }
 }
 
+function RiskTag({ risk }) {
+  const color = risk === 'high' || risk === 'blocked' ? 'red' : risk === 'medium' ? 'gold' : 'green'
+  return <Tag color={color}>{risk || 'unknown'}</Tag>
+}
+
+function sortSessions(items) {
+  return [...items].sort((a, b) => {
+    if (Boolean(a.pinned) !== Boolean(b.pinned)) return a.pinned ? -1 : 1
+    return b.updatedAt - a.updatedAt
+  })
+}
+
+function renderMessageContent(content) {
+  const txt = String(content || '')
+  if (!txt.includes('```')) return <div style={{ whiteSpace: 'pre-wrap' }}>{txt}</div>
+  const parts = txt.split('```')
+  return (
+    <Space direction="vertical" size={8} style={{ width: '100%' }}>
+      {parts.map((p, idx) => {
+        const chunk = p.trim()
+        if (!chunk) return null
+        const isCode = idx % 2 === 1
+        if (isCode) {
+          const clean = chunk.replace(/^\w+\n/, '')
+          return (
+            <pre key={idx} className="chat-code-block">
+              {clean}
+            </pre>
+          )
+        }
+        return <div key={idx} style={{ whiteSpace: 'pre-wrap' }}>{chunk}</div>
+      })}
+    </Space>
+  )
+}
+
 export default function App() {
   const [dashboard, setDashboard] = useState(null)
   const [strategy, setStrategy] = useState(null)
+  const [chatInput, setChatInput] = useState('')
+  const [chatLoading, setChatLoading] = useState(false)
+  const [drawerOpen, setDrawerOpen] = useState(false)
+  const [sessionDrawerOpen, setSessionDrawerOpen] = useState(false)
+  const [rightCollapsed, setRightCollapsed] = useState(false)
+  const [apiUp, setApiUp] = useState(true)
+  const [sessions, setSessions] = useState([newSession()])
+  const [activeSessionId, setActiveSessionId] = useState('')
+  const [sessionQuery, setSessionQuery] = useState('')
+  const [isMobile, setIsMobile] = useState(false)
 
-  useEffect(() => {
-    ;(async () => {
-      const d = await safeFetch('/data/dashboard.json')
-      const s = await safeFetch('/data/strategy_state.json')
-      setDashboard(d)
-      setStrategy(s)
-    })()
-  }, [])
+  const abortRef = useRef(null)
+  const messageBoxRef = useRef(null)
+
+  const activeSession = useMemo(
+    () => sessions.find((s) => s.id === activeSessionId) || sessions[0] || null,
+    [sessions, activeSessionId]
+  )
+
+  const orderedSessions = useMemo(() => sortSessions(sessions), [sessions])
+  const filteredSessions = useMemo(() => {
+    const q = sessionQuery.trim().toLowerCase()
+    if (!q) return orderedSessions
+    return orderedSessions.filter((s) => (s.title || '').toLowerCase().includes(q))
+  }, [orderedSessions, sessionQuery])
+
+  const summary = dashboard?.summary || {}
+  const assess = dashboard?.last_assessment || {}
+  const policy = dashboard?.last_policy || {}
+  const proposed = strategy?.proposed?.executor || {}
+  const ab = dashboard?.ab_metrics || {}
+  const treatment = ab?.treatment || {}
+  const control = ab?.control || {}
 
   const nodeRows = useMemo(() => {
     const rows = dashboard?.last_result?.node_results || []
@@ -36,114 +153,482 @@ export default function App() {
     const rows = dashboard?.summary?.top_errors || []
     return rows.map((r, i) => ({ key: i + 1, ...r }))
   }, [dashboard])
-  const ab = dashboard?.ab_metrics || {}
-  const treatment = ab?.treatment || {}
-  const control = ab?.control || {}
 
-  const summary = dashboard?.summary || {}
-  const assess = dashboard?.last_assessment || {}
-  const policy = dashboard?.last_policy || {}
-  const proposed = strategy?.proposed?.executor || {}
+  function updateSessionById(sessionId, updater) {
+    setSessions((prev) => sortSessions(prev.map((s) => (s.id === sessionId ? updater(s) : s))))
+  }
+
+  async function refreshAll() {
+    const [d, s] = await Promise.all([
+      safeFetch('/data/dashboard.json'),
+      safeFetch('/data/strategy_state.json'),
+    ])
+    setDashboard(d)
+    setStrategy(s)
+  }
+
+  useEffect(() => {
+    const onResize = () => setIsMobile(window.innerWidth < 992)
+    onResize()
+    window.addEventListener('resize', onResize)
+    return () => window.removeEventListener('resize', onResize)
+  }, [])
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(sessions))
+    } catch {
+      // ignore
+    }
+  }, [sessions])
+
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem(STORAGE_KEY)
+      if (raw) {
+        const parsed = JSON.parse(raw)
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          const normalized = parsed.map((s) => ({ ...s, pinned: Boolean(s.pinned) }))
+          const sorted = sortSessions(normalized)
+          setSessions(sorted)
+          setActiveSessionId(sorted[0].id)
+        }
+      } else {
+        const s = newSession()
+        setSessions([s])
+        setActiveSessionId(s.id)
+      }
+    } catch {
+      const s = newSession()
+      setSessions([s])
+      setActiveSessionId(s.id)
+    }
+    refreshAll()
+    ;(async () => {
+      const h = await safeFetch('/api/health')
+      setApiUp(Boolean(h?.ok))
+    })()
+  }, [])
+
+  useEffect(() => {
+    const el = messageBoxRef.current
+    if (el) el.scrollTop = el.scrollHeight
+  }, [activeSession?.messages, chatLoading])
+
+  function createSessionAndSelect() {
+    const s = newSession()
+    setSessions((prev) => sortSessions([s, ...prev]))
+    setActiveSessionId(s.id)
+    setSessionDrawerOpen(false)
+  }
+
+  function removeSession(id) {
+    setSessions((prev) => {
+      const left = prev.filter((s) => s.id !== id)
+      if (left.length === 0) {
+        const s = newSession()
+        setActiveSessionId(s.id)
+        return [s]
+      }
+      const sorted = sortSessions(left)
+      if (activeSessionId === id) setActiveSessionId(sorted[0].id)
+      return sorted
+    })
+  }
+
+  function togglePin(id) {
+    setSessions((prev) => sortSessions(prev.map((s) => (s.id === id ? { ...s, pinned: !s.pinned, updatedAt: Date.now() } : s))))
+  }
+
+  function clearActiveChat() {
+    if (!activeSession) return
+    updateSessionById(activeSession.id, (s) => ({
+      ...s,
+      title: '新会话',
+      lastPayload: null,
+      updatedAt: Date.now(),
+      messages: [{ role: 'assistant', content: '对话已清空。请输入新的任务目标。', ts: Date.now() }],
+    }))
+  }
+
+  async function sendChat(textInput) {
+    if (!activeSession) return
+    const sessionId = activeSession.id
+    const text = (textInput ?? chatInput).trim()
+    if (!text || chatLoading) return
+    setChatInput('')
+
+    const reqId = `req_${Date.now()}_${Math.random().toString(16).slice(2, 8)}`
+
+    updateSessionById(sessionId, (s) => {
+      const title = s.title === '新会话' ? text.replace(/\s+/g, ' ').slice(0, 20) : s.title
+      return {
+        ...s,
+        title,
+        updatedAt: Date.now(),
+        messages: [
+          ...s.messages,
+          { role: 'user', content: text, ts: Date.now() },
+          { id: reqId, role: 'assistant', content: '正在思考中...', pending: true, ts: Date.now() },
+        ],
+      }
+    })
+
+    setChatLoading(true)
+    const ctrl = new AbortController()
+    abortRef.current = ctrl
+
+    try {
+      const res = await fetch('/api/chat', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ message: text }),
+        signal: ctrl.signal,
+      })
+      const data = await res.json()
+      if (!res.ok || !data?.ok) {
+        updateSessionById(sessionId, (s) => ({
+          ...s,
+          updatedAt: Date.now(),
+          messages: s.messages.map((m) =>
+            m.id === reqId ? { ...m, pending: false, content: `请求失败：${data?.error || res.status}` } : m
+          ),
+        }))
+        message.error('请求失败，请检查后端服务')
+      } else {
+        updateSessionById(sessionId, (s) => ({
+          ...s,
+          updatedAt: Date.now(),
+          lastPayload: data,
+          messages: s.messages.map((m) =>
+            m.id === reqId ? { ...m, pending: false, content: data.reply || '任务执行完成。' } : m
+          ),
+        }))
+        await refreshAll()
+      }
+    } catch (e) {
+      const aborted = ctrl.signal.aborted
+      updateSessionById(sessionId, (s) => ({
+        ...s,
+        updatedAt: Date.now(),
+        messages: s.messages.map((m) =>
+          m.id === reqId ? { ...m, pending: false, content: aborted ? '已停止当前请求。' : `网络错误：${String(e)}` } : m
+        ),
+      }))
+      if (!aborted) message.error('网络错误，无法连接到 /api/chat')
+    } finally {
+      abortRef.current = null
+      setChatLoading(false)
+    }
+  }
+
+  function stopCurrentRequest() {
+    if (abortRef.current) abortRef.current.abort()
+  }
+
+  const showRightPanel = !isMobile && !rightCollapsed
+
+  const sessionListNode = (
+    <Space direction="vertical" style={{ width: '100%' }} size={10}>
+      <Button type="primary" icon={<PlusOutlined />} block onClick={createSessionAndSelect}>新建会话</Button>
+      <Search placeholder="搜索会话" allowClear value={sessionQuery} onChange={(e) => setSessionQuery(e.target.value)} />
+      <List
+        size="small"
+        dataSource={filteredSessions}
+        locale={{ emptyText: '暂无会话' }}
+        renderItem={(item) => (
+          <List.Item
+            className="session-item"
+            style={{
+              border: item.id === activeSession?.id ? '1px solid #1677ff' : '1px solid #e5e7eb',
+            }}
+            onClick={() => {
+              setActiveSessionId(item.id)
+              setSessionDrawerOpen(false)
+            }}
+            actions={[
+              <Button
+                key="pin"
+                size="small"
+                type="text"
+                icon={item.pinned ? <PushpinFilled /> : <PushpinOutlined />}
+                onClick={(e) => {
+                  e.stopPropagation()
+                  togglePin(item.id)
+                }}
+              />,
+              <Button
+                key="del"
+                size="small"
+                type="text"
+                danger
+                icon={<DeleteOutlined />}
+                onClick={(e) => {
+                  e.stopPropagation()
+                  removeSession(item.id)
+                }}
+              />,
+            ]}
+          >
+            <List.Item.Meta
+              avatar={<Avatar icon={<MessageOutlined />} />}
+              title={<Text ellipsis style={{ maxWidth: 140 }}>{item.title || '新会话'}</Text>}
+              description={<Text type="secondary">{new Date(item.updatedAt).toLocaleString()}</Text>}
+            />
+          </List.Item>
+        )}
+      />
+    </Space>
+  )
 
   return (
-    <Layout className="min-h-screen">
-      <Header className="!bg-slate-900 flex items-center">
-        <Title level={3} className="!text-white !m-0">GTOS God View</Title>
-      </Header>
-      <Content className="p-6 max-w-7xl mx-auto w-full">
-        {!dashboard && (
-          <Alert
-            type="warning"
-            showIcon
-            message="No dashboard data found"
-            description={'Run "python -m gtos.main --task ..." first, then refresh this page.'}
-            className="mb-4"
-          />
-        )}
+    <ConfigProvider
+      theme={{
+        token: {
+          colorPrimary: '#1677ff',
+          borderRadius: 12,
+          colorBgContainer: '#ffffff',
+        },
+      }}
+    >
+      <Layout className="app-shell">
+        <Header className="top-header">
+          <Space>
+            {isMobile ? <Button icon={<MenuOutlined />} onClick={() => setSessionDrawerOpen(true)} /> : null}
+            <BarChartOutlined style={{ color: '#fff', fontSize: 18 }} />
+            <Title level={4} style={{ color: '#fff', margin: 0 }}>GTOS 控制台</Title>
+            <Badge status={apiUp ? 'success' : 'error'} text={<span style={{ color: '#dbeafe' }}>{apiUp ? 'API 在线' : 'API 离线'}</span>} />
+          </Space>
+          <Button icon={<ReloadOutlined />} onClick={refreshAll}>刷新面板</Button>
+        </Header>
 
-        <Row gutter={[16, 16]}>
-          <Col xs={24} md={6}><Card><Statistic title="Success Rate" value={((summary.success_rate || 0) * 100).toFixed(2)} suffix="%" /></Card></Col>
-          <Col xs={24} md={6}><Card><Statistic title="Avg Latency (ms)" value={summary.avg_latency_ms || 0} /></Card></Col>
-          <Col xs={24} md={6}><Card><Statistic title="Avg Fix Rounds" value={summary.avg_fix_rounds || 0} /></Card></Col>
-          <Col xs={24} md={6}><Card><Statistic title="Window" value={summary.window || 0} /></Card></Col>
-        </Row>
+        <Layout className="main-layout">
+          {!isMobile ? (
+            <Sider width={300} className="left-sider">
+              <div className="session-list-wrap">
+                {sessionListNode}
+              </div>
+            </Sider>
+          ) : null}
 
-        <Row gutter={[16, 16]} className="mt-1">
-          <Col xs={24} lg={12}>
-            <Card title="Last Assessment">
-              <Space direction="vertical" size={4}>
-                <Text>Risk: <Tag color={assess.risk_level === 'high' || assess.risk_level === 'blocked' ? 'red' : assess.risk_level === 'medium' ? 'gold' : 'green'}>{assess.risk_level || 'unknown'}</Tag></Text>
-                <Text>Capability: {assess.capability_score ?? '-'}</Text>
-                <Text>Task Type: {assess.task_type || '-'}</Text>
-                <Text>Dynamic Samples: {assess.dynamic?.samples ?? '-'}</Text>
-                <Text>Dynamic Fail Rate: {assess.dynamic?.fail_rate ?? '-'}</Text>
-              </Space>
-            </Card>
-          </Col>
-          <Col xs={24} lg={12}>
-            <Card title="Current Execution Policy">
-              <Space direction="vertical" size={4}>
-                <Text>Parallel: {String(policy.parallel ?? false)}</Text>
-                <Text>Workers: {policy.max_workers ?? '-'}</Text>
-                <Text>Retries: {policy.node_retry_count ?? '-'}</Text>
-                <Text>Fail Policy: {policy.fail_policy ?? '-'}</Text>
-              </Space>
-            </Card>
-          </Col>
-        </Row>
-
-        <Row gutter={[16, 16]} className="mt-1">
-          <Col xs={24} lg={14}>
-            <Card title="Node Results">
-              <Table
-                dataSource={nodeRows}
-                pagination={false}
-                columns={[
-                  { title: 'Node', dataIndex: 'id', key: 'id' },
-                  { title: 'Success', dataIndex: 'success', key: 'success', render: (v) => <Tag color={v ? 'green' : 'red'}>{String(v)}</Tag> },
-                  { title: 'Skipped', dataIndex: 'skipped', key: 'skipped', render: (v) => String(v) },
-                  { title: 'Attempts', dataIndex: 'attempts', key: 'attempts' },
-                  { title: 'Latency(ms)', dataIndex: 'latency_ms', key: 'latency_ms' },
-                ]}
+          <Content className="main-content">
+            {!dashboard ? (
+              <Alert
+                type="warning"
+                showIcon
+                message="未发现监控数据"
+                description='请先运行 "python -m gtos.main --task ..." 或通过对话发送一次任务。'
+                style={{ marginBottom: 12 }}
               />
-            </Card>
-          </Col>
-          <Col xs={24} lg={10}>
-            <Card title="Top Errors (Task-level)">
-              <Table
-                dataSource={topErrors}
-                pagination={false}
-                columns={[
-                  { title: 'Error Type', dataIndex: 'error_type', key: 'error_type' },
-                  { title: 'Count', dataIndex: 'count', key: 'count' },
-                ]}
-              />
-            </Card>
-            <Card title="Optimizer Proposal" className="mt-4">
-              <Space direction="vertical" size={4}>
-                <Text>Mode: {strategy?.mode || '-'}</Text>
-                <Text>Apply: {String(strategy?.applied ?? false)}</Text>
-                <Text>Parallel: {String(proposed.dag_parallel ?? false)}</Text>
-                <Text>Workers: {proposed.dag_max_workers ?? '-'}</Text>
-                <Text>Retries: {proposed.node_retry_count ?? '-'}</Text>
-                <Text>Fail Policy: {proposed.dag_fail_policy ?? '-'}</Text>
-              </Space>
-            </Card>
-            <Card title="Skill A/B Metrics" className="mt-4">
-              <Space direction="vertical" size={4}>
-                <Text strong>Treatment</Text>
-                <Text>Runs: {treatment.runs ?? 0}</Text>
-                <Text>Success: {treatment.success_rate ?? '-'}</Text>
-                <Text>First-pass: {treatment.first_pass_rate ?? '-'}</Text>
-                <Text strong className="mt-2">Control</Text>
-                <Text>Runs: {control.runs ?? 0}</Text>
-                <Text>Success: {control.success_rate ?? '-'}</Text>
-                <Text>First-pass: {control.first_pass_rate ?? '-'}</Text>
-              </Space>
-            </Card>
-          </Col>
-        </Row>
-      </Content>
-    </Layout>
+            ) : null}
+
+            <Tabs
+              className="main-tabs"
+              style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' }}
+              tabBarStyle={{ marginBottom: 12, flexShrink: 0 }}
+              defaultActiveKey="chat"
+              items={[
+                {
+                  key: 'chat',
+                  label: <span><MessageOutlined /> 对话交互</span>,
+                  children: (
+                    <Row gutter={[16, 16]} className="chat-tab-row" style={{ height: '100%', margin: 0 }}>
+                      <Col xs={24} lg={showRightPanel ? 16 : 24} style={{ height: '100%', minHeight: 0 }}>
+                        <Card
+                          className="chat-card"
+                          style={{ height: '100%', minHeight: 0, display: 'flex', flexDirection: 'column' }}
+                          title={activeSession?.title || '任务对话'}
+                          extra={
+                            <Space>
+                              {!isMobile ? (
+                                <Button size="small" icon={rightCollapsed ? <LeftOutlined /> : <RightOutlined />} onClick={() => setRightCollapsed((v) => !v)}>
+                                  {rightCollapsed ? '展开侧栏' : '收起侧栏'}
+                                </Button>
+                              ) : null}
+                              <Button size="small" icon={<ClearOutlined />} onClick={clearActiveChat}>清空</Button>
+                              <Button size="small" onClick={() => setDrawerOpen(true)} disabled={!activeSession?.lastPayload}>查看详情</Button>
+                            </Space>
+                          }
+                          bodyStyle={{ padding: 12, flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' }}
+                        >
+                          <div ref={messageBoxRef} className="chat-scroll-region">
+                            {!activeSession?.messages?.length ? (
+                              <Empty description="暂无消息" />
+                            ) : (
+                              <List
+                                dataSource={activeSession.messages}
+                                renderItem={(item) => (
+                                  <List.Item style={{ border: 'none', padding: '8px 0' }}>
+                                    <div style={{ width: '100%', display: 'flex', justifyContent: item.role === 'user' ? 'flex-end' : 'flex-start' }}>
+                                      <Space align="start">
+                                        {item.role !== 'user' ? <Avatar icon={<RobotOutlined />} /> : null}
+                                        <div className={item.role === 'user' ? 'msg-bubble user' : 'msg-bubble assistant'}>
+                                          <div>{renderMessageContent(item.content)}</div>
+                                          {item.pending ? <div style={{ marginTop: 8 }}><Spin size="small" /> <Text type="secondary">正在生成中...</Text></div> : null}
+                                        </div>
+                                        {item.role === 'user' ? <Avatar icon={<UserOutlined />} style={{ background: '#1677ff' }} /> : null}
+                                      </Space>
+                                    </div>
+                                  </List.Item>
+                                )}
+                              />
+                            )}
+                          </div>
+
+                          <div className="chat-composer-fixed">
+                            <TextArea
+                              rows={4}
+                              value={chatInput}
+                              onChange={(e) => setChatInput(e.target.value)}
+                              onPressEnter={(e) => {
+                                if (!e.shiftKey) {
+                                  e.preventDefault()
+                                  sendChat()
+                                }
+                              }}
+                              placeholder="请输入任务。回车发送，Shift+回车换行。"
+                            />
+
+                            <div className="composer-actions">
+                              <Text type="secondary">输入区固定底部，消息区独立滚动。</Text>
+                              <Space>
+                                {chatLoading ? <Button danger icon={<StopOutlined />} onClick={stopCurrentRequest}>停止</Button> : null}
+                                <Button type="primary" icon={<SendOutlined />} onClick={() => sendChat()} loading={chatLoading}>发送</Button>
+                              </Space>
+                            </div>
+                          </div>
+                        </Card>
+                      </Col>
+
+                      {showRightPanel ? (
+                      <Col xs={24} lg={8} className="chat-right-panel" style={{ height: '100%', paddingRight: 2 }}>
+                        <Space direction="vertical" size={16} style={{ width: '100%' }}>
+                          <Card title="运行总览">
+                            <Row gutter={12}>
+                              <Col span={12}><Statistic title="成功率" value={((summary.success_rate || 0) * 100).toFixed(2)} suffix="%" /></Col>
+                              <Col span={12}><Statistic title="窗口" value={summary.window || 0} /></Col>
+                              <Col span={12}><Statistic title="平均延迟" value={summary.avg_latency_ms || 0} suffix="ms" /></Col>
+                              <Col span={12}><Statistic title="平均修复轮次" value={summary.avg_fix_rounds || 0} /></Col>
+                            </Row>
+                          </Card>
+
+                          <Card title="认知与策略">
+                            <Descriptions size="small" column={1} labelStyle={{ width: 108 }}>
+                              <Descriptions.Item label="风险等级"><RiskTag risk={assess.risk_level} /></Descriptions.Item>
+                              <Descriptions.Item label="能力分">{assess.capability_score ?? '-'}</Descriptions.Item>
+                              <Descriptions.Item label="任务类型">{assess.task_type ?? '-'}</Descriptions.Item>
+                              <Descriptions.Item label="并行">{String(policy.parallel ?? false)}</Descriptions.Item>
+                              <Descriptions.Item label="并发数">{policy.max_workers ?? '-'}</Descriptions.Item>
+                              <Descriptions.Item label="失败策略">{policy.fail_policy ?? '-'}</Descriptions.Item>
+                            </Descriptions>
+                          </Card>
+
+                          <Card title="技能 A/B">
+                            <Row gutter={12}>
+                              <Col span={12}>
+                                <Text strong>实验组</Text>
+                                <Paragraph style={{ marginBottom: 8 }}>样本: {treatment.runs ?? 0}</Paragraph>
+                                <Paragraph style={{ marginBottom: 8 }}>成功率: {treatment.success_rate ?? '-'}</Paragraph>
+                                <Paragraph style={{ marginBottom: 0 }}>首轮成功: {treatment.first_pass_rate ?? '-'}</Paragraph>
+                              </Col>
+                              <Col span={12}>
+                                <Text strong>对照组</Text>
+                                <Paragraph style={{ marginBottom: 8 }}>样本: {control.runs ?? 0}</Paragraph>
+                                <Paragraph style={{ marginBottom: 8 }}>成功率: {control.success_rate ?? '-'}</Paragraph>
+                                <Paragraph style={{ marginBottom: 0 }}>首轮成功: {control.first_pass_rate ?? '-'}</Paragraph>
+                              </Col>
+                            </Row>
+                          </Card>
+                        </Space>
+                      </Col>
+                      ) : null}
+                    </Row>
+                  ),
+                },
+                {
+                  key: 'dashboard',
+                  label: <span><BarChartOutlined /> 监控面板</span>,
+                  children: (
+                    <div className="dashboard-panel-wrap" style={{ height: '100%', paddingRight: 2 }}>
+                      <Row gutter={[16, 16]}>
+                        <Col xs={24} lg={14}>
+                          <Card title="节点执行结果">
+                            <Table
+                              dataSource={nodeRows}
+                              rowKey="key"
+                              pagination={{ pageSize: 8, showSizeChanger: true, pageSizeOptions: ['8', '16', '24'] }}
+                              columns={[
+                                { title: '节点', dataIndex: 'id' },
+                                {
+                                  title: '成功',
+                                  dataIndex: 'success',
+                                  filters: [{ text: '成功', value: 'true' }, { text: '失败', value: 'false' }],
+                                  onFilter: (v, r) => String(r.success) === String(v),
+                                  render: (v) => <Tag color={v ? 'green' : 'red'}>{String(v)}</Tag>,
+                                },
+                                {
+                                  title: '跳过',
+                                  dataIndex: 'skipped',
+                                  filters: [{ text: '是', value: 'true' }, { text: '否', value: 'false' }],
+                                  onFilter: (v, r) => String(Boolean(r.skipped)) === String(v),
+                                  render: (v) => String(Boolean(v)),
+                                },
+                                { title: '尝试次数', dataIndex: 'attempts', sorter: (a, b) => (a.attempts || 0) - (b.attempts || 0) },
+                                { title: '延迟(ms)', dataIndex: 'latency_ms', sorter: (a, b) => (a.latency_ms || 0) - (b.latency_ms || 0) },
+                              ]}
+                            />
+                          </Card>
+                        </Col>
+                        <Col xs={24} lg={10}>
+                          <Card title="错误类型（任务级）">
+                            <Table
+                              dataSource={topErrors}
+                              rowKey="key"
+                              pagination={{ pageSize: 6, showSizeChanger: false }}
+                              columns={[
+                                { title: '错误类型', dataIndex: 'error_type' },
+                                { title: '次数', dataIndex: 'count', sorter: (a, b) => (a.count || 0) - (b.count || 0) },
+                              ]}
+                            />
+                          </Card>
+                          <Card title="优化器建议" style={{ marginTop: 16 }}>
+                            <Descriptions size="small" column={1} labelStyle={{ width: 120 }}>
+                              <Descriptions.Item label="模式">{strategy?.mode || '-'}</Descriptions.Item>
+                              <Descriptions.Item label="自动应用">{String(strategy?.applied ?? false)}</Descriptions.Item>
+                              <Descriptions.Item label="建议并行">{String(proposed.dag_parallel ?? false)}</Descriptions.Item>
+                              <Descriptions.Item label="建议并发数">{proposed.dag_max_workers ?? '-'}</Descriptions.Item>
+                              <Descriptions.Item label="建议重试数">{proposed.node_retry_count ?? '-'}</Descriptions.Item>
+                              <Descriptions.Item label="建议失败策略">{proposed.dag_fail_policy ?? '-'}</Descriptions.Item>
+                            </Descriptions>
+                          </Card>
+                        </Col>
+                      </Row>
+                    </div>
+                  ),
+                },
+              ]}
+            />
+          </Content>
+        </Layout>
+
+        <Drawer title="会话列表" open={sessionDrawerOpen} onClose={() => setSessionDrawerOpen(false)} placement="left" width={300}>
+          {sessionListNode}
+        </Drawer>
+
+        <Drawer title="最近一次执行详情" open={drawerOpen} onClose={() => setDrawerOpen(false)} width={720}>
+          {activeSession?.lastPayload ? (
+            <>
+              <Text strong>回复</Text>
+              <Paragraph style={{ whiteSpace: 'pre-wrap' }}>{activeSession.lastPayload.reply}</Paragraph>
+              <Divider />
+              <Text strong>原始返回</Text>
+              <pre className="chat-code-block" style={{ maxHeight: 420 }}>{JSON.stringify(activeSession.lastPayload, null, 2)}</pre>
+            </>
+          ) : (
+            <Empty description="暂无执行详情" />
+          )}
+        </Drawer>
+      </Layout>
+    </ConfigProvider>
   )
 }

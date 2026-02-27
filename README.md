@@ -27,6 +27,14 @@ npm run dev
 
 页面会读取 `dashboard-ui/public/data/*.json`（构建/启动前会自动从 `data/` 同步）。
 
+Web Chat API（本地）：
+
+```cmd
+run_web_api.cmd
+```
+
+默认地址 `http://127.0.0.1:8000`，前端会通过 Vite 代理 `/api/chat` 与其交互。
+
 ## 配置
 
 在项目根目录的 **`config.json`** 中自行修改配置，无需改代码。

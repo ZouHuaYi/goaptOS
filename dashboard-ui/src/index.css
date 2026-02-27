@@ -2,7 +2,215 @@
 @tailwind components;
 @tailwind utilities;
 
+:root {
+  --bg-main: #f3f6fb;
+}
+
+* {
+  box-sizing: border-box;
+}
+
 body {
   margin: 0;
-  font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, "Apple Color Emoji", "Segoe UI Emoji";
+  font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, 'Apple Color Emoji', 'Segoe UI Emoji';
+  background: radial-gradient(1200px 600px at 10% -10%, #dbeafe 0%, transparent 50%),
+    radial-gradient(1200px 600px at 90% -20%, #e0f2fe 0%, transparent 45%),
+    var(--bg-main);
+}
+
+.app-shell {
+  min-height: 100vh;
+}
+
+.top-header {
+  background: linear-gradient(90deg, #0b1220 0%, #111827 60%, #0f172a 100%);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.main-layout {
+  height: calc(100vh - 64px);
+  min-height: 0;
+  display: flex;
+}
+
+.left-sider {
+  background: #fff;
+  border-right: 1px solid #e5e7eb;
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.left-sider .session-list-wrap {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior-y: contain;
+}
+
+.main-content {
+  flex: 1;
+  padding: 16px;
+  min-height: 0;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+.session-item {
+  border-radius: 10px;
+  margin-bottom: 8px;
+  padding: 10px;
+  cursor: pointer;
+  transition: all 0.16s ease;
+}
+
+.session-item:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 4px 16px rgba(15, 23, 42, 0.08);
+}
+
+.chat-card .ant-card-head {
+  border-bottom: 1px solid #edf2f7;
+}
+
+.chat-scroll-region {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior-y: contain;
+  background: linear-gradient(180deg, #f8fafc 0%, #f1f5f9 100%);
+  border: 1px solid #e2e8f0;
+  border-radius: 12px;
+  padding: 12px;
+}
+
+.msg-bubble {
+  position: relative;
+  max-width: 72ch;
+  padding: 10px 12px;
+  border-radius: 12px;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.msg-bubble.user {
+  background: linear-gradient(180deg, #1d4ed8 0%, #2563eb 100%);
+  color: #fff;
+}
+
+.msg-bubble.assistant {
+  background: #fff;
+  color: #0f172a;
+  border: 1px solid #e2e8f0;
+}
+
+.chat-composer-fixed {
+  flex-shrink: 0;
+  background: #fff;
+  margin-top: 10px;
+  padding-top: 8px;
+  border-top: 1px solid #f1f5f9;
+}
+
+.composer-actions {
+  margin-top: 10px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+}
+
+.chat-code-block {
+  margin: 0;
+  padding: 12px;
+  border-radius: 8px;
+  background: #0f172a;
+  color: #e2e8f0;
+  overflow: auto;
+}
+
+.ant-card {
+  border: 1px solid #e5e7eb;
+  box-shadow: 0 6px 24px rgba(15, 23, 42, 0.06);
+}
+
+.main-content .ant-tabs {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  flex: 1;
+}
+
+.main-content .ant-tabs .ant-tabs-content-holder {
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.main-content .ant-tabs .ant-tabs-content,
+.main-content .ant-tabs .ant-tabs-tabpane {
+  height: 100%;
+}
+
+.main-content .ant-tabs .ant-tabs-tabpane-active {
+  min-height: 0;
+  overflow: hidden;
+}
+
+/* 右侧面板与监控面板可滚动 */
+.chat-right-panel {
+  min-height: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior-y: contain;
+}
+
+.dashboard-panel-wrap {
+  min-height: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior-y: contain;
+}
+
+/* Drawer 内容可滚动 */
+.ant-drawer-body {
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+/* 对话区 Row 占满高度以便内部滚动 */
+.chat-tab-row {
+  min-height: 0;
+  flex: 1;
+}
+
+.chat-tab-row .ant-col {
+  min-height: 0;
+}
+
+/* 触控与焦点优化 */
+.session-item:active {
+  opacity: 0.9;
+}
+
+@media (max-width: 991px) {
+  .main-content {
+    padding: 12px;
+  }
+  .composer-actions {
+    flex-direction: column;
+    align-items: flex-start;
+  }
 }

@@ -1,29 +1,29 @@
 {
-  "generated_ts": 1772188698.0458033,
+  "generated_ts": 1772207518.010203,
   "window": 100,
   "summary": {
-    "window": 9,
-    "success": 9,
+    "window": 24,
+    "success": 24,
     "failed": 0,
     "success_rate": 1.0,
-    "avg_latency_ms": 0.0,
+    "avg_latency_ms": 5611.27,
     "avg_fix_rounds": 0.0,
     "top_errors": [],
     "level": "task"
   },
   "ab_metrics": {
     "treatment": {
-      "runs": 5,
-      "success": 5,
-      "first_pass_success": 5,
+      "runs": 12,
+      "success": 12,
+      "first_pass_success": 10,
       "success_rate": 1.0,
-      "first_pass_rate": 1.0
+      "first_pass_rate": 0.8333
     },
-    "updated_ts": 1772188698.037106,
+    "updated_ts": 1772207517.999619,
     "control": {
-      "runs": 3,
-      "success": 3,
-      "first_pass_success": 3,
+      "runs": 11,
+      "success": 11,
+      "first_pass_success": 11,
       "success_rate": 1.0,
       "first_pass_rate": 1.0
     }
@@ -37,9 +37,9 @@
     "dynamic": {
       "enabled": true,
       "risk_boost": "low",
-      "samples": 28,
+      "samples": 48,
       "fail_rate": 0.0,
-      "avg_fix_rounds": 0.0
+      "avg_fix_rounds": 0.021
     },
     "mode": "advise"
   },
@@ -63,7 +63,7 @@
         "success": true,
         "skipped": false,
         "attempts": 1,
-        "latency_ms": 1735.36
+        "latency_ms": 3051.83
       }
     ]
   }

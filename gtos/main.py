@@ -83,6 +83,46 @@ def _build_plugins(config: dict, llm_client: LLMClient) -> tuple[PluginManager, 
 
 
 def main(config_path: str | None = None, task_override: str | None = None) -> None:
+    payload = execute_once(config_path=config_path, task_override=task_override)
+    result = payload["result"]
+    optimizer_state = payload["optimizer_state"]
+    dashboard_path = payload["dashboard_path"]
+
+    print("--- result ---")
+    if result.get("results"):
+        for i, r in enumerate(result["results"]):
+            print(f"[{i+1}] success:", r.get("success"), "id:", r.get("id"))
+            if r.get("stdout"):
+                print("  stdout:", (r["stdout"] or "").strip()[:200])
+        if result.get("summary"):
+            s = result["summary"]
+            print("summary:", f"total={s.get('total')} success={s.get('success')} failed={s.get('failed')} skipped={s.get('skipped')}")
+        if result.get("execution_policy"):
+            p = result["execution_policy"]
+            print("policy:", f"parallel={p.get('parallel')} workers={p.get('max_workers')} retries={p.get('node_retry_count')} fail_policy={p.get('fail_policy')}")
+        if result.get("failure_chain"):
+            print("failure_chain:", result.get("failure_chain"))
+        print("all success:", result.get("success"))
+    else:
+        print("success:", result.get("success"))
+        if result.get("stdout"):
+            print("stdout:", result["stdout"].strip())
+        if result.get("stderr"):
+            print("stderr:", result["stderr"])
+        if result.get("code"):
+            print("code (first 3 lines):", result["code"].strip().split("\n")[:3])
+        if result.get("rejected"):
+            print("rejected:", True)
+            print("reason:", result.get("reason"))
+            print("risk:", result.get("risk"))
+            print("capability_score:", result.get("capability_score"))
+    if optimizer_state.get("enabled"):
+        print("optimizer:", f"mode={optimizer_state.get('mode')} applied={optimizer_state.get('applied')}")
+    if dashboard_path:
+        print("god_view:", dashboard_path)
+
+
+def execute_once(config_path: str | None = None, task_override: str | None = None) -> dict:
     config = load_config(config_path)
     _setup_logging(config.get("logging", {}).get("level", "INFO"))
     optimizer_state = StrategyOptimizer(config.get("optimization", {})).optimize(config)
@@ -123,15 +163,20 @@ def main(config_path: str | None = None, task_override: str | None = None) -> No
             error_type="rejected",
             level="task",
         )
-        print("--- result ---")
-        print("success:", False)
-        print("rejected:", True)
-        print("reason:", decision.get("reason"))
-        print("risk:", assessment.get("risk_level"))
-        print("capability_score:", assessment.get("capability_score"))
-        if assessment.get("dynamic"):
-            print("dynamic:", assessment.get("dynamic"))
-        return
+        return {
+            "result": {
+                "success": False,
+                "rejected": True,
+                "reason": decision.get("reason"),
+                "risk": assessment.get("risk_level"),
+                "capability_score": assessment.get("capability_score"),
+                "dynamic": assessment.get("dynamic"),
+            },
+            "assessment": assessment,
+            "optimizer_state": optimizer_state,
+            "dashboard_path": config.get("visualization", {}).get("json_file", "data/dashboard.json"),
+            "config": config,
+        }
 
     use_planner = exec_cfg.get("use_planner", False)
 
@@ -177,34 +222,13 @@ def main(config_path: str | None = None, task_override: str | None = None) -> No
         last_assessment=assessment,
         last_policy=(result.get("execution_policy") or policy),
     )
-
-    print("--- result ---")
-    if result.get("results"):
-        for i, r in enumerate(result["results"]):
-            print(f"[{i+1}] success:", r.get("success"), "id:", r.get("id"))
-            if r.get("stdout"):
-                print("  stdout:", (r["stdout"] or "").strip()[:200])
-        if result.get("summary"):
-            s = result["summary"]
-            print("summary:", f"total={s.get('total')} success={s.get('success')} failed={s.get('failed')} skipped={s.get('skipped')}")
-        if result.get("execution_policy"):
-            p = result["execution_policy"]
-            print("policy:", f"parallel={p.get('parallel')} workers={p.get('max_workers')} retries={p.get('node_retry_count')} fail_policy={p.get('fail_policy')}")
-        if result.get("failure_chain"):
-            print("failure_chain:", result.get("failure_chain"))
-        print("all success:", result.get("success"))
-    else:
-        print("success:", result.get("success"))
-        if result.get("stdout"):
-            print("stdout:", result["stdout"].strip())
-        if result.get("stderr"):
-            print("stderr:", result["stderr"])
-        if result.get("code"):
-            print("code (first 3 lines):", result["code"].strip().split("\n")[:3])
-    if optimizer_state.get("enabled"):
-        print("optimizer:", f"mode={optimizer_state.get('mode')} applied={optimizer_state.get('applied')}")
-    if dashboard.get("enabled", True):
-        print("god_view:", config.get("visualization", {}).get("json_file", "data/dashboard.json"))
+    return {
+        "result": result,
+        "assessment": assessment,
+        "optimizer_state": optimizer_state,
+        "dashboard_path": config.get("visualization", {}).get("json_file", "data/dashboard.json") if dashboard.get("enabled", True) else "",
+        "config": config,
+    }
 
 
 if __name__ == "__main__":
