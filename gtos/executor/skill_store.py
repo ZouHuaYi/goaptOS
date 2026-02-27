@@ -36,3 +36,6 @@ class SkillStore:
     def search_by_task(self, query: str) -> list[dict[str, Any]]:
         q = query.lower()
         return [s for s in self._skills if q in s.get("task", "").lower()]
+
+    def list_all(self) -> list[dict[str, Any]]:
+        return list(self._skills)

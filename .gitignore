@@ -23,6 +23,7 @@ pip-wheel-metadata/
 .coverage
 .coverage.*
 htmlcov/
+node_modules/
 
 # IDE/editor
 .vscode/
@@ -39,7 +40,18 @@ Thumbs.db
 data/chroma/
 data/skills.json
 data/skill_vectors.json
+data/runs.jsonl
+data/metrics.json
+data/cognition_profile.json
+data/strategy_state.json
+data/dashboard.json
+data/dashboard.md
+data/skill_ab_metrics.json
 gtos/data/skills.json
+
+# Dashboard UI
+dashboard-ui/node_modules/
+dashboard-ui/dist/
 
 # Local secrets/config
 .env

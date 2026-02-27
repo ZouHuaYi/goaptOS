@@ -1,0 +1,70 @@
+{
+  "generated_ts": 1772188698.0458033,
+  "window": 100,
+  "summary": {
+    "window": 9,
+    "success": 9,
+    "failed": 0,
+    "success_rate": 1.0,
+    "avg_latency_ms": 0.0,
+    "avg_fix_rounds": 0.0,
+    "top_errors": [],
+    "level": "task"
+  },
+  "ab_metrics": {
+    "treatment": {
+      "runs": 5,
+      "success": 5,
+      "first_pass_success": 5,
+      "success_rate": 1.0,
+      "first_pass_rate": 1.0
+    },
+    "updated_ts": 1772188698.037106,
+    "control": {
+      "runs": 3,
+      "success": 3,
+      "first_pass_success": 3,
+      "success_rate": 1.0,
+      "first_pass_rate": 1.0
+    }
+  },
+  "last_assessment": {
+    "risk_level": "low",
+    "capability_score": 0.75,
+    "task_type": "python_code",
+    "matched_blocked": [],
+    "matched_risky": [],
+    "dynamic": {
+      "enabled": true,
+      "risk_boost": "low",
+      "samples": 28,
+      "fail_rate": 0.0,
+      "avg_fix_rounds": 0.0
+    },
+    "mode": "advise"
+  },
+  "last_policy": {
+    "parallel": false,
+    "max_workers": 4,
+    "node_retry_count": 1,
+    "fail_policy": "skip"
+  },
+  "last_result": {
+    "success": true,
+    "summary": {
+      "total": 1,
+      "success": 1,
+      "failed": 0,
+      "skipped": 0
+    },
+    "node_results": [
+      {
+        "id": "1",
+        "success": true,
+        "skipped": false,
+        "attempts": 1,
+        "latency_ms": 1735.36
+      }
+    ]
+  }
+}

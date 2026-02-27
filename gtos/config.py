@@ -29,11 +29,62 @@ def _default_config() -> dict[str, Any]:
             "use_planner": False,
             "dag_parallel": False,
             "dag_max_workers": 4,
+            "node_retry_count": 0,
+            "dag_fail_policy": "skip",
         },
         "plugins": {
-            "enabled": ["logger", "skill", "agent", "llm_optimizer"],
-            "skill": {"recent_count": 3, "retrieval_top_k": 5},
+            "enabled": ["logger", "feedback", "skill", "agent", "llm_optimizer"],
+            "skill": {
+                "recent_count": 3,
+                "retrieval_top_k": 5,
+                "min_relevance": 0.22,
+                "max_context_chars": 900,
+                "ab_test": {
+                    "mode": "auto",
+                    "treatment_ratio": 0.5,
+                    "salt": "skill-ab-v1",
+                    "metrics_file": str(data_dir / "skill_ab_metrics.json"),
+                },
+            },
             "llm_optimizer": {"refine": False},
+        },
+        "analytics": {
+            "runs_file": str(data_dir / "runs.jsonl"),
+            "metrics_file": str(data_dir / "metrics.json"),
+        },
+        "optimization": {
+            "enabled": True,
+            "mode": "suggest",
+            "runs_file": str(data_dir / "runs.jsonl"),
+            "output_file": str(data_dir / "strategy_state.json"),
+            "window": 80,
+            "target_success_rate": 0.85,
+            "target_avg_fix_rounds": 0.8,
+            "target_avg_latency_ms": 8000,
+        },
+        "self_cognition": {
+            "mode": "advise",
+            "profile_file": str(data_dir / "cognition_profile.json"),
+            "allowed_domains": ["python", "automation", "code_generation", "debug"],
+            "blocked_keywords": ["rm -rf", "format disk", "wipe", "ransomware"],
+            "high_risk_keywords": ["delete", "drop table", "shutdown", "kill process", "production"],
+            "dynamic": {
+                "enabled": True,
+                "runs_file": str(data_dir / "runs.jsonl"),
+                "window": 200,
+                "min_samples": 8,
+                "fail_rate_warn": 0.35,
+                "fail_rate_reject": 0.7,
+                "avg_fix_rounds_warn": 1.2,
+            },
+        },
+        "visualization": {
+            "enabled": True,
+            "runs_file": str(data_dir / "runs.jsonl"),
+            "ab_metrics_file": str(data_dir / "skill_ab_metrics.json"),
+            "json_file": str(data_dir / "dashboard.json"),
+            "markdown_file": str(data_dir / "dashboard.md"),
+            "window": 100,
         },
         "memory": {
             "vector_store": {
@@ -99,7 +150,7 @@ def load_config(config_path: str | Path | None = None) -> dict[str, Any]:
 
 
 def _resolve_paths(cfg: dict[str, Any], root: Path) -> dict[str, Any]:
-    """将 paths 下相对路径解析为基于 root 的绝对路径。"""
+    """将 paths/analytics/optimization/self_cognition/visualization 下相对路径解析为基于 root 的绝对路径。"""
     out = dict(cfg)
     paths = out.get("paths", {})
     resolved = {}
@@ -109,6 +160,36 @@ def _resolve_paths(cfg: dict[str, Any], root: Path) -> dict[str, Any]:
         else:
             resolved[k] = v
     out["paths"] = resolved
+    analytics = out.get("analytics", {})
+    analytics_resolved = {}
+    for k, v in analytics.items():
+        if isinstance(v, str) and v and not Path(v).is_absolute():
+            analytics_resolved[k] = str((root / v).resolve())
+        else:
+            analytics_resolved[k] = v
+    out["analytics"] = analytics_resolved
+    optimization = out.get("optimization", {})
+    optimization_resolved = dict(optimization)
+    for k in ("runs_file", "output_file"):
+        v = optimization_resolved.get(k)
+        if isinstance(v, str) and v and not Path(v).is_absolute():
+            optimization_resolved[k] = str((root / v).resolve())
+    out["optimization"] = optimization_resolved
+    sc = out.get("self_cognition", {})
+    if isinstance(sc.get("profile_file"), str) and sc.get("profile_file") and not Path(sc["profile_file"]).is_absolute():
+        sc["profile_file"] = str((root / sc["profile_file"]).resolve())
+    dynamic = sc.get("dynamic", {}) if isinstance(sc.get("dynamic"), dict) else {}
+    if isinstance(dynamic.get("runs_file"), str) and dynamic.get("runs_file") and not Path(dynamic["runs_file"]).is_absolute():
+        dynamic["runs_file"] = str((root / dynamic["runs_file"]).resolve())
+    sc["dynamic"] = dynamic
+    out["self_cognition"] = sc
+    vis = out.get("visualization", {})
+    vis_resolved = dict(vis)
+    for k in ("runs_file", "ab_metrics_file", "json_file", "markdown_file"):
+        v = vis_resolved.get(k)
+        if isinstance(v, str) and v and not Path(v).is_absolute():
+            vis_resolved[k] = str((root / v).resolve())
+    out["visualization"] = vis_resolved
     return out
 
 

@@ -2,6 +2,7 @@
 """按 DAG 顺序或并行执行子任务，并聚合结果。"""
 
 from concurrent.futures import ThreadPoolExecutor, as_completed
+import time
 from typing import Any
 
 from gtos.executor.planner import topo_order
@@ -22,33 +23,118 @@ def _node_prompt(node: dict[str, Any]) -> str:
     return "\n".join(lines)
 
 
-def run_dag(
+def _execute_node(node: dict[str, Any], code_executor: Any, plugin_manager: Any, node_retry_count: int) -> dict[str, Any]:
+    prompt = plugin_manager.apply_pre_execute(_node_prompt(node))
+    attempts = 0
+    started = time.perf_counter()
+    last: dict[str, Any] = {}
+
+    while attempts <= max(0, node_retry_count):
+        attempts += 1
+        try:
+            r = code_executor.execute_task(prompt, original_task=node.get("prompt", ""))
+        except Exception as e:
+            plugin_manager.apply_on_error(str(e))
+            r = {"success": False, "id": node["id"], "error": str(e)}
+        last = r
+        if r.get("success"):
+            break
+
+    latency_ms = (time.perf_counter() - started) * 1000
+    out = plugin_manager.apply_post_execute(
+        {
+            **last,
+            "id": node["id"],
+            "deps": node.get("deps", []),
+            "attempts": attempts,
+            "_metrics": {**(last.get("_metrics", {}) if isinstance(last, dict) else {}), "node_latency_ms": round(latency_ms, 2)},
+        }
+    )
+    out.setdefault("_node", {})["attempts"] = attempts
+    out["_node"]["latency_ms"] = round(latency_ms, 2)
+    return out
+
+
+def _build_report(ordered: list[dict[str, Any]], id_to_result: dict[str, dict], timeline: list[dict[str, Any]]) -> dict[str, Any]:
+    results = [id_to_result[n["id"]] for n in ordered]
+    success_count = sum(1 for r in results if r.get("success"))
+    skipped_count = sum(1 for r in results if r.get("skipped"))
+    failed_count = len(results) - success_count - skipped_count
+    failure_chain = [r["id"] for r in results if (not r.get("success")) and (not r.get("skipped"))]
+    return {
+        "success": failed_count == 0 and skipped_count == 0,
+        "results": results,
+        "summary": {
+            "total": len(results),
+            "success": success_count,
+            "failed": failed_count,
+            "skipped": skipped_count,
+        },
+        "failure_chain": failure_chain,
+        "timeline": timeline,
+    }
+
+
+def run_dag_report(
     nodes: list[dict[str, Any]],
     code_executor: Any,
     plugin_manager: Any,
     parallel: bool = False,
     max_workers: int = 4,
-) -> list[dict[str, Any]]:
-    """按 DAG 执行：parallel=False 严格拓扑序；parallel=True 同层并行。"""
+    node_retry_count: int = 0,
+    fail_policy: str = "skip",
+) -> dict[str, Any]:
+    """按 DAG 执行并返回结构化报告。fail_policy: stop | skip | continue"""
     ordered = topo_order(nodes)
     if not ordered:
-        return []
-    if not parallel:
-        results = []
-        for node in ordered:
-            prompt = plugin_manager.apply_pre_execute(_node_prompt(node))
-            try:
-                r = code_executor.execute_task(prompt)
-            except Exception as e:
-                plugin_manager.apply_on_error(str(e))
-                r = {"success": False, "id": node["id"], "error": str(e)}
-            r = plugin_manager.apply_post_execute({**r, "id": node["id"], "deps": node.get("deps", [])})
-            results.append(r)
-        return results
+        return {
+            "success": False,
+            "results": [],
+            "summary": {"total": 0, "success": 0, "failed": 0, "skipped": 0},
+            "failure_chain": [],
+            "timeline": [],
+            "error": "invalid dag (cycle or empty)",
+        }
 
-    # 同层并行：按拓扑层分组，层内并行执行
-    id_to_node = {n["id"]: n for n in ordered}
+    fail_policy = fail_policy if fail_policy in {"stop", "skip", "continue"} else "skip"
     id_to_result: dict[str, dict] = {}
+    timeline: list[dict[str, Any]] = []
+
+    if not parallel:
+        for node in ordered:
+            dep_fail = any((not id_to_result.get(d, {}).get("success", False)) for d in node.get("deps", []))
+            if dep_fail and fail_policy == "skip":
+                skipped = {
+                    "id": node["id"],
+                    "deps": node.get("deps", []),
+                    "success": False,
+                    "skipped": True,
+                    "error": "skipped_due_to_failed_dependencies",
+                    "_node": {"attempts": 0, "latency_ms": 0.0},
+                }
+                id_to_result[node["id"]] = skipped
+                timeline.append({"id": node["id"], "status": "skipped"})
+                continue
+
+            r = _execute_node(node, code_executor, plugin_manager, node_retry_count=node_retry_count)
+            id_to_result[node["id"]] = r
+            timeline.append({"id": node["id"], "status": "success" if r.get("success") else "failed"})
+
+            if not r.get("success") and fail_policy == "stop":
+                for n in ordered:
+                    if n["id"] not in id_to_result:
+                        id_to_result[n["id"]] = {
+                            "id": n["id"],
+                            "deps": n.get("deps", []),
+                            "success": False,
+                            "skipped": True,
+                            "error": "skipped_due_to_stop_policy",
+                            "_node": {"attempts": 0, "latency_ms": 0.0},
+                        }
+                break
+
+        return _build_report(ordered, id_to_result, timeline)
+
     completed = set()
 
     def ready(n: dict) -> bool:
@@ -59,24 +145,69 @@ def run_dag(
             batch = [n for n in ordered if n["id"] not in completed and ready(n)]
             if not batch:
                 break
+
             futures = {}
             for node in batch:
-                def run_one(nd):
-                    prompt = plugin_manager.apply_pre_execute(_node_prompt(nd))
-                    try:
-                        r = code_executor.execute_task(prompt)
-                    except Exception as e:
-                        plugin_manager.apply_on_error(str(e))
-                        r = {"success": False, "id": nd["id"], "error": str(e)}
-                    return plugin_manager.apply_post_execute({**r, "id": nd["id"], "deps": nd.get("deps", [])})
-                fut = pool.submit(run_one, node)
+                dep_fail = any((not id_to_result.get(d, {}).get("success", False)) for d in node.get("deps", []))
+                if dep_fail and fail_policy == "skip":
+                    id_to_result[node["id"]] = {
+                        "id": node["id"],
+                        "deps": node.get("deps", []),
+                        "success": False,
+                        "skipped": True,
+                        "error": "skipped_due_to_failed_dependencies",
+                        "_node": {"attempts": 0, "latency_ms": 0.0},
+                    }
+                    completed.add(node["id"])
+                    timeline.append({"id": node["id"], "status": "skipped"})
+                    continue
+
+                fut = pool.submit(_execute_node, node, code_executor, plugin_manager, node_retry_count)
                 futures[fut] = node["id"]
+
             for fut in as_completed(futures):
                 nid = futures[fut]
                 try:
                     id_to_result[nid] = fut.result()
                 except Exception as e:
-                    id_to_result[nid] = {"success": False, "id": nid, "error": str(e)}
+                    id_to_result[nid] = {
+                        "success": False,
+                        "id": nid,
+                        "error": str(e),
+                        "_node": {"attempts": 1, "latency_ms": 0.0},
+                    }
                 completed.add(nid)
+                timeline.append({"id": nid, "status": "success" if id_to_result[nid].get("success") else "failed"})
 
-    return [id_to_result[n["id"]] for n in ordered]
+                if not id_to_result[nid].get("success") and fail_policy == "stop":
+                    for n in ordered:
+                        if n["id"] not in id_to_result:
+                            id_to_result[n["id"]] = {
+                                "id": n["id"],
+                                "deps": n.get("deps", []),
+                                "success": False,
+                                "skipped": True,
+                                "error": "skipped_due_to_stop_policy",
+                                "_node": {"attempts": 0, "latency_ms": 0.0},
+                            }
+                    completed = set(n["id"] for n in ordered)
+                    break
+
+    return _build_report(ordered, id_to_result, timeline)
+
+
+def run_dag(
+    nodes: list[dict[str, Any]],
+    code_executor: Any,
+    plugin_manager: Any,
+    parallel: bool = False,
+    max_workers: int = 4,
+) -> list[dict[str, Any]]:
+    """兼容接口：返回结果列表。"""
+    return run_dag_report(
+        nodes,
+        code_executor,
+        plugin_manager,
+        parallel=parallel,
+        max_workers=max_workers,
+    )["results"]

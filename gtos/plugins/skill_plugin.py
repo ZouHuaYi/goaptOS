@@ -1,8 +1,15 @@
 # gtos/plugins/skill_plugin.py
 """技能抽象与复用：pre 检索相似成功流程注入 prompt，post 将成功结果写入向量存储。"""
 
+import hashlib
+import json
+import threading
+import time
+from pathlib import Path
+
 from gtos.executor.plugin_manager import Plugin
 from gtos.executor.skill_store import SkillStore
+from gtos.memory.skill_matcher import SkillMatcher
 from gtos.memory.vector_store import VectorStore
 
 
@@ -13,29 +20,55 @@ class SkillPlugin(Plugin):
         vector_store: VectorStore | None = None,
         recent_count: int = 3,
         retrieval_top_k: int = 5,
+        min_relevance: float = 0.22,
+        max_context_chars: int = 900,
+        ab_test: dict | None = None,
     ) -> None:
         self._store = skill_store or SkillStore()
         self._vector_store = vector_store
         self._recent_count = recent_count
         self._retrieval_top_k = retrieval_top_k
+        self._min_relevance = min_relevance
+        self._matcher = SkillMatcher(
+            skill_store=self._store,
+            vector_store=self._vector_store,
+            min_relevance=min_relevance,
+            max_context_chars=max_context_chars,
+        )
+        self._local = threading.local()
+        self._ab_lock = threading.Lock()
+        cfg = ab_test or {}
+        self._ab_mode = str(cfg.get("mode", "auto")).lower()  # off/control/treatment/auto
+        self._ab_ratio = float(cfg.get("treatment_ratio", 0.5))
+        self._ab_salt = str(cfg.get("salt", "skill-ab-v1"))
+        self._ab_metrics_path = Path(cfg.get("metrics_file", "data/skill_ab_metrics.json"))
 
     def pre_execute(self, task_prompt: str) -> str:
-        hints_parts = []
-        if self._vector_store:
-            hits = self._vector_store.search(task_prompt, top_k=self._retrieval_top_k)
-            if hits:
-                for h in hits:
-                    hints_parts.append("- " + (h.get("text") or "")[:150])
-        if not hints_parts:
-            recent = self._store.get_recent(self._recent_count)
-            for s in recent:
-                hints_parts.append("- " + (s.get("task") or "")[:80])
-        if not hints_parts:
+        bucket = self._pick_bucket(task_prompt)
+        self._local.ab_bucket = bucket
+
+        if bucket in {"control", "off"}:
             return task_prompt
-        hints = "\n".join(hints_parts)
-        return f"[Similar / recent successful tasks]\n{hints}\n\n[Current task]\n{task_prompt}"
+
+        hits = self._matcher.retrieve(task_prompt, top_k=self._retrieval_top_k)
+        if not hits:
+            recent = self._store.get_recent(self._recent_count)
+            hits = [
+                {
+                    "task": s.get("task", ""),
+                    "text": s.get("task", ""),
+                    "code": s.get("code", ""),
+                    "success": bool(s.get("success", True)),
+                    "source": "recent",
+                }
+                for s in recent
+            ]
+        return self._matcher.build_context(task_prompt, hits) if hits else task_prompt
 
     def post_execute(self, result: dict) -> dict:
+        bucket = getattr(self._local, "ab_bucket", "unknown")
+        self._update_ab_metrics(bucket=bucket, result=result)
+
         if result.get("success") and self._vector_store:
             task = result.get("task") or result.get("_task") or ""
             code = result.get("code") or ""
@@ -46,3 +79,45 @@ class SkillPlugin(Plugin):
 
     def on_error(self, error_info: str) -> str:
         return error_info
+
+    def _pick_bucket(self, task_prompt: str) -> str:
+        mode = self._ab_mode
+        if mode in {"off", "control", "treatment"}:
+            return mode
+        raw = f"{self._ab_salt}::{task_prompt}".encode("utf-8")
+        h = hashlib.sha256(raw).hexdigest()
+        val = int(h[:8], 16) / 0xFFFFFFFF
+        return "treatment" if val < self._ab_ratio else "control"
+
+    def _update_ab_metrics(self, bucket: str, result: dict) -> None:
+        if bucket not in {"control", "treatment", "off"}:
+            return
+        with self._ab_lock:
+            data = self._load_ab_metrics()
+            stat = data.setdefault(bucket, {"runs": 0, "success": 0, "first_pass_success": 0})
+            stat["runs"] += 1
+            if result.get("success"):
+                stat["success"] += 1
+            if result.get("success") and int(result.get("fix_rounds", 0) or 0) == 0:
+                stat["first_pass_success"] += 1
+            stat["success_rate"] = round(stat["success"] / stat["runs"], 4) if stat["runs"] else 0.0
+            stat["first_pass_rate"] = round(stat["first_pass_success"] / stat["runs"], 4) if stat["runs"] else 0.0
+            data["updated_ts"] = time.time()
+            self._save_ab_metrics(data)
+
+    def _load_ab_metrics(self) -> dict:
+        if not self._ab_metrics_path.exists():
+            return {}
+        try:
+            with open(self._ab_metrics_path, "r", encoding="utf-8") as f:
+                obj = json.load(f)
+                return obj if isinstance(obj, dict) else {}
+        except Exception:
+            return {}
+
+    def _save_ab_metrics(self, payload: dict) -> None:
+        self._ab_metrics_path.parent.mkdir(parents=True, exist_ok=True)
+        tmp = self._ab_metrics_path.with_suffix(self._ab_metrics_path.suffix + ".tmp")
+        with open(tmp, "w", encoding="utf-8") as f:
+            json.dump(payload, f, ensure_ascii=False, indent=2)
+        tmp.replace(self._ab_metrics_path)

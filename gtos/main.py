@@ -3,13 +3,17 @@
 
 import argparse
 import logging
+import time
 from pathlib import Path
+from gtos.analytics import RunLogger
+from gtos.analytics.strategy_optimizer import StrategyOptimizer
+from gtos.cognition import SelfCognition
 from gtos.config import load_config
 from gtos.core.llm import LLMClient
-from gtos.executor import CodeExecutor, PluginManager, SkillStore, decompose, plan_to_dag, run_dag
-from gtos.executor.dag_runner import _node_prompt
+from gtos.executor import CodeExecutor, PluginManager, SkillStore, TaskOrchestrator
 from gtos.memory import get_vector_store
-from gtos.plugins import AgentPlugin, LLMOptimizerPlugin, LoggerPlugin, SkillPlugin
+from gtos.observability import GodViewBuilder
+from gtos.plugins import AgentPlugin, FeedbackPlugin, LLMOptimizerPlugin, LoggerPlugin, SkillPlugin
 
 
 def _setup_logging(level: str) -> None:
@@ -17,7 +21,7 @@ def _setup_logging(level: str) -> None:
     logging.basicConfig(level=lvl, format="%(levelname)s [%(name)s] %(message)s")
 
 
-def _build_plugins(config: dict, llm_client: LLMClient) -> tuple[PluginManager, object]:
+def _build_plugins(config: dict, llm_client: LLMClient) -> tuple[PluginManager, object, RunLogger]:
     paths = config.get("paths", {})
     plugins_cfg = config.get("plugins", {})
     memory_cfg = config.get("memory", {}).get("vector_store", {})
@@ -51,13 +55,22 @@ def _build_plugins(config: dict, llm_client: LLMClient) -> tuple[PluginManager, 
 
     skill_cfg = plugins_cfg.get("skill", {})
     llm_opt_cfg = plugins_cfg.get("llm_optimizer", {})
+    analytics_cfg = config.get("analytics", {})
+    run_logger = RunLogger(
+        runs_path=analytics_cfg.get("runs_file", "data/runs.jsonl"),
+        metrics_path=analytics_cfg.get("metrics_file", "data/metrics.json"),
+    )
     name_to_plugin = {
         "logger": LoggerPlugin(),
+        "feedback": FeedbackPlugin(run_logger=run_logger),
         "skill": SkillPlugin(
             skill_store=skill_store,
             vector_store=vector_store,
             recent_count=skill_cfg.get("recent_count", 3),
             retrieval_top_k=skill_cfg.get("retrieval_top_k", 5),
+            min_relevance=float(skill_cfg.get("min_relevance", 0.22)),
+            max_context_chars=int(skill_cfg.get("max_context_chars", 900)),
+            ab_test=skill_cfg.get("ab_test", {}),
         ),
         "agent": AgentPlugin(),
         "llm_optimizer": LLMOptimizerPlugin(llm_client=llm_client, refine=llm_opt_cfg.get("refine", False)),
@@ -66,15 +79,16 @@ def _build_plugins(config: dict, llm_client: LLMClient) -> tuple[PluginManager, 
     for name in enabled:
         if name in name_to_plugin:
             pm.register(name_to_plugin[name])
-    return pm, vector_store
+    return pm, vector_store, run_logger
 
 
 def main(config_path: str | None = None, task_override: str | None = None) -> None:
     config = load_config(config_path)
     _setup_logging(config.get("logging", {}).get("level", "INFO"))
+    optimizer_state = StrategyOptimizer(config.get("optimization", {})).optimize(config)
 
     llm_client = LLMClient(config=config.get("llm", {}))
-    plugin_manager, vector_store = _build_plugins(config, llm_client)
+    plugin_manager, vector_store, run_logger = _build_plugins(config, llm_client)
     paths = config.get("paths", {})
     exec_cfg = config.get("executor", {})
 
@@ -85,38 +99,84 @@ def main(config_path: str | None = None, task_override: str | None = None) -> No
         timeout_seconds=exec_cfg.get("timeout_seconds", 30),
     )
 
-    task_prompt = task_override or config.get("default_task", "用 Python 打印 Hello from gtos 并计算 1+2")
-    prompt = plugin_manager.apply_pre_execute(task_prompt)
-
     exec_cfg = config.get("executor", {})
+    task_prompt = task_override or config.get("default_task", "用 Python 打印 Hello from gtos 并计算 1+2")
+    root_run_id = run_logger.start_run(task_prompt, task_prompt, meta={"phase": "root_task", "level": "task"})
+    root_started = time.perf_counter()
+    cognition = SelfCognition(config.get("self_cognition", {}))
+    assessment = cognition.assess_task(task_prompt)
+    decision = cognition.decide(assessment)
+    if decision.get("action") == "warn":
+        dynamic = assessment.get("dynamic", {}) or {}
+        logging.getLogger("gtos").warning(
+            "self_cognition warning: risk=%s capability=%.2f reason=%s dynamic_samples=%s dynamic_fail_rate=%s",
+            assessment.get("risk_level"),
+            float(assessment.get("capability_score", 0.0)),
+            decision.get("reason"),
+            dynamic.get("samples"),
+            dynamic.get("fail_rate"),
+        )
+    if decision.get("action") == "reject":
+        run_logger.finish_run(
+            root_run_id,
+            {"success": False, "error": decision.get("reason"), "_metrics": {"latency_ms": 0.0}, "fix_rounds": 0},
+            error_type="rejected",
+            level="task",
+        )
+        print("--- result ---")
+        print("success:", False)
+        print("rejected:", True)
+        print("reason:", decision.get("reason"))
+        print("risk:", assessment.get("risk_level"))
+        print("capability_score:", assessment.get("capability_score"))
+        if assessment.get("dynamic"):
+            print("dynamic:", assessment.get("dynamic"))
+        return
+
     use_planner = exec_cfg.get("use_planner", False)
-    dag_parallel = exec_cfg.get("dag_parallel", False)
-    dag_max_workers = exec_cfg.get("dag_max_workers", 4)
 
     if use_planner:
         skill_cfg = config.get("plugins", {}).get("skill", {})
-        dag = plan_to_dag(prompt, vector_store=vector_store, retrieval_top_k=skill_cfg.get("retrieval_top_k", 5))
-        if len(dag) > 1:
-            try:
-                results = run_dag(dag, code_executor, plugin_manager, parallel=dag_parallel, max_workers=dag_max_workers)
-            except Exception as e:
-                plugin_manager.apply_on_error(str(e))
-                raise
-            result = {"success": all(r.get("success") for r in results), "results": results}
-        else:
-            try:
-                result = code_executor.execute_task(_node_prompt(dag[0])) if dag else {}
-            except Exception as e:
-                plugin_manager.apply_on_error(str(e))
-                raise
-            result = plugin_manager.apply_post_execute(result)
-    else:
+        orchestrator = TaskOrchestrator(vector_store=vector_store, retrieval_top_k=skill_cfg.get("retrieval_top_k", 5))
+        policy = orchestrator.derive_execution_policy(exec_cfg, assessment=assessment)
+        dag = orchestrator.plan(task_prompt)
         try:
-            result = code_executor.execute_task(prompt)
+            result = orchestrator.execute(
+                dag,
+                code_executor,
+                plugin_manager,
+                parallel=policy["parallel"],
+                max_workers=policy["max_workers"],
+                node_retry_count=policy["node_retry_count"],
+                fail_policy=policy["fail_policy"],
+            )
+        except Exception as e:
+            plugin_manager.apply_on_error(str(e))
+            raise
+    else:
+        policy = {
+            "parallel": False,
+            "max_workers": 1,
+            "node_retry_count": int(exec_cfg.get("node_retry_count", 0)),
+            "fail_policy": "single_task",
+        }
+        prompt = plugin_manager.apply_pre_execute(task_prompt)
+        try:
+            result = code_executor.execute_task(prompt, original_task=task_prompt)
         except Exception as e:
             plugin_manager.apply_on_error(str(e))
             raise
         result = plugin_manager.apply_post_execute(result)
+
+    cognition.update_capability(result)
+    total_latency_ms = round((time.perf_counter() - root_started) * 1000, 2)
+    result.setdefault("_metrics", {})["latency_ms"] = total_latency_ms
+    run_logger.finish_run(root_run_id, result, level="task")
+    dashboard = GodViewBuilder(config.get("visualization", {})).build(
+        last_result=result,
+        last_assessment=assessment,
+        last_policy=(result.get("execution_policy") or policy),
+    )
 
     print("--- result ---")
     if result.get("results"):
@@ -124,6 +184,14 @@ def main(config_path: str | None = None, task_override: str | None = None) -> No
             print(f"[{i+1}] success:", r.get("success"), "id:", r.get("id"))
             if r.get("stdout"):
                 print("  stdout:", (r["stdout"] or "").strip()[:200])
+        if result.get("summary"):
+            s = result["summary"]
+            print("summary:", f"total={s.get('total')} success={s.get('success')} failed={s.get('failed')} skipped={s.get('skipped')}")
+        if result.get("execution_policy"):
+            p = result["execution_policy"]
+            print("policy:", f"parallel={p.get('parallel')} workers={p.get('max_workers')} retries={p.get('node_retry_count')} fail_policy={p.get('fail_policy')}")
+        if result.get("failure_chain"):
+            print("failure_chain:", result.get("failure_chain"))
         print("all success:", result.get("success"))
     else:
         print("success:", result.get("success"))
@@ -133,6 +201,10 @@ def main(config_path: str | None = None, task_override: str | None = None) -> No
             print("stderr:", result["stderr"])
         if result.get("code"):
             print("code (first 3 lines):", result["code"].strip().split("\n")[:3])
+    if optimizer_state.get("enabled"):
+        print("optimizer:", f"mode={optimizer_state.get('mode')} applied={optimizer_state.get('applied')}")
+    if dashboard.get("enabled", True):
+        print("god_view:", config.get("visualization", {}).get("json_file", "data/dashboard.json"))
 
 
 if __name__ == "__main__":

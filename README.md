@@ -17,6 +17,16 @@ python -m gtos.main
 run.cmd
 ```
 
+前端监控面板（React + TailwindCSS + Ant Design）：
+
+```cmd
+cd dashboard-ui
+npm install
+npm run dev
+```
+
+页面会读取 `dashboard-ui/public/data/*.json`（构建/启动前会自动从 `data/` 同步）。
+
 ## 配置
 
 在项目根目录的 **`config.json`** 中自行修改配置，无需改代码。
@@ -27,9 +37,10 @@ run.cmd
 | `paths.sqlite_db` | SQLite 数据库路径 |
 | `executor.max_fix_rounds` | 执行失败时最多自动修复轮数 |
 | `executor.timeout_seconds` | 单次代码执行超时（秒） |
-| `plugins.enabled` | 启用的插件列表：`logger` / `skill` / `agent` / `llm_optimizer` |
+| `plugins.enabled` | 启用的插件列表：`logger` / `feedback` / `skill` / `agent` / `llm_optimizer` |
 | `plugins.skill.recent_count` | 技能插件注入的最近成功任务条数 |
 | `plugins.skill.retrieval_top_k` | 向量/关键词检索返回条数 |
+| `plugins.skill.ab_test.*` | A/B 实验：`control`(不注入) vs `treatment`(注入)；输出 `skill_ab_metrics.json` |
 | `plugins.llm_optimizer.refine` | 是否在 pre 阶段用 LLM 优化任务描述 |
 | `memory.vector_store.enabled` | 是否启用技能向量/关键词存储 |
 | `memory.vector_store.backend` | `keyword`（无依赖）或 `chroma`（需 pip install chromadb） |
@@ -37,6 +48,19 @@ run.cmd
 | `executor.use_planner` | 是否走 DAG 规划（当前单节点仍为单任务） |
 | `executor.dag_parallel` | DAG 多节点时是否同层并行 |
 | `executor.dag_max_workers` | 并行时最大线程数 |
+| `executor.node_retry_count` | 节点级额外重试次数（DAG 模式） |
+| `executor.dag_fail_policy` | `stop` / `skip` / `continue` 失败策略 |
+| `self_cognition + planner` | 风险高时自动降级执行策略（禁并行、`fail_policy=stop`） |
+| `analytics.runs_file` | 任务运行事件日志（JSONL）路径 |
+| `analytics.metrics_file` | 聚合指标输出路径 |
+| `optimization.mode` | `suggest` 仅建议 / `apply` 自动应用策略 |
+| `optimization.*` | 基于历史指标自动调整执行策略（并行/重试/失败策略/refine） |
+| `self_cognition.mode` | `off` / `advise` / `enforce` |
+| `self_cognition.profile_file` | 能力画像统计文件 |
+| `self_cognition.blocked_keywords` | 命中后直接拒绝执行 |
+| `self_cognition.high_risk_keywords` | 命中后告警（`advise`）或拒绝（`enforce`） |
+| `self_cognition.dynamic.*` | 基于 runs 历史的动态风险调节（失败率/修复轮次） |
+| `visualization.*` | 生成“上帝视角”快照（`dashboard.json` + `dashboard.md`） |
 | `logging.level` | 日志级别：`DEBUG` / `INFO` / `WARNING` / `ERROR` |
 | `default_task` | 默认任务描述（`main` 无参数时的任务） |
 | `llm.provider` | 当前支持 `openai_compatible` |
