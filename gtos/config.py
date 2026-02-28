@@ -62,6 +62,11 @@ def _default_config() -> dict[str, Any]:
             "target_avg_fix_rounds": 0.8,
             "target_avg_latency_ms": 8000,
         },
+        "adaptive_engine": {
+            "enabled": True,
+            "stats_file": str(data_dir / "capability_stats.json"),
+            "ema_alpha": 0.25,
+        },
         "self_cognition": {
             "mode": "advise",
             "profile_file": str(data_dir / "cognition_profile.json"),
@@ -82,6 +87,7 @@ def _default_config() -> dict[str, Any]:
             "enabled": True,
             "runs_file": str(data_dir / "runs.jsonl"),
             "ab_metrics_file": str(data_dir / "skill_ab_metrics.json"),
+            "capability_stats_file": str(data_dir / "capability_stats.json"),
             "json_file": str(data_dir / "dashboard.json"),
             "markdown_file": str(data_dir / "dashboard.md"),
             "window": 100,
@@ -175,6 +181,12 @@ def _resolve_paths(cfg: dict[str, Any], root: Path) -> dict[str, Any]:
         if isinstance(v, str) and v and not Path(v).is_absolute():
             optimization_resolved[k] = str((root / v).resolve())
     out["optimization"] = optimization_resolved
+    adaptive = out.get("adaptive_engine", {})
+    adaptive_resolved = dict(adaptive)
+    v = adaptive_resolved.get("stats_file")
+    if isinstance(v, str) and v and not Path(v).is_absolute():
+        adaptive_resolved["stats_file"] = str((root / v).resolve())
+    out["adaptive_engine"] = adaptive_resolved
     sc = out.get("self_cognition", {})
     if isinstance(sc.get("profile_file"), str) and sc.get("profile_file") and not Path(sc["profile_file"]).is_absolute():
         sc["profile_file"] = str((root / sc["profile_file"]).resolve())
@@ -185,7 +197,7 @@ def _resolve_paths(cfg: dict[str, Any], root: Path) -> dict[str, Any]:
     out["self_cognition"] = sc
     vis = out.get("visualization", {})
     vis_resolved = dict(vis)
-    for k in ("runs_file", "ab_metrics_file", "json_file", "markdown_file"):
+    for k in ("runs_file", "ab_metrics_file", "capability_stats_file", "json_file", "markdown_file"):
         v = vis_resolved.get(k)
         if isinstance(v, str) and v and not Path(v).is_absolute():
             vis_resolved[k] = str((root / v).resolve())

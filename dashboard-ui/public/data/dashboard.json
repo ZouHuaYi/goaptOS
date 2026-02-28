@@ -1,12 +1,12 @@
 {
-  "generated_ts": 1772245976.2004452,
+  "generated_ts": 1772246548.5496545,
   "window": 100,
   "summary": {
-    "window": 51,
-    "success": 50,
+    "window": 52,
+    "success": 51,
     "failed": 1,
-    "success_rate": 0.9803921568627451,
-    "avg_latency_ms": 12829.36,
+    "success_rate": 0.9807692307692307,
+    "avg_latency_ms": 12667.28,
     "avg_fix_rounds": 0.0,
     "top_errors": [
       {
@@ -18,13 +18,13 @@
   },
   "ab_metrics": {
     "treatment": {
-      "runs": 22,
-      "success": 22,
-      "first_pass_success": 19,
+      "runs": 23,
+      "success": 23,
+      "first_pass_success": 20,
       "success_rate": 1.0,
-      "first_pass_rate": 0.8636
+      "first_pass_rate": 0.8696
     },
-    "updated_ts": 1772245976.1871502,
+    "updated_ts": 1772246548.5356555,
     "control": {
       "runs": 28,
       "success": 27,
@@ -34,15 +34,15 @@
     }
   },
   "skill_lifecycle": {
-    "total": 59,
-    "active": 59,
+    "total": 60,
+    "active": 60,
     "expired": 0,
-    "avg_score": 0.5275,
+    "avg_score": 0.5337,
     "score_buckets": {
       "0-0.3": 0,
       "0.3-0.6": 55,
       "0.6-0.8": 0,
-      "0.8-1.0": 4
+      "0.8-1.0": 5
     },
     "version_distribution": [
       {
@@ -228,10 +228,6 @@
         "score": 0.5
       },
       {
-        "ts": 1772245537.4038603,
-        "score": 0.5
-      },
-      {
         "ts": 1772245540.086001,
         "score": 0.905
       },
@@ -245,6 +241,10 @@
       },
       {
         "ts": 1772245976.182995,
+        "score": 0.905
+      },
+      {
+        "ts": 1772246548.5312924,
         "score": 0.905
       }
     ],
@@ -275,6 +275,13 @@
         "task": "用 Python 计算 1+2 并打印结果",
         "score": 0.905,
         "version": 5,
+        "status": "active"
+      },
+      {
+        "skill_id": "7b727c4fc36ac586",
+        "task": "请用 Python 计算 1+2 并打印结果",
+        "score": 0.905,
+        "version": 1,
         "status": "active"
       },
       {
@@ -311,13 +318,6 @@
         "score": 0.5,
         "version": 1,
         "status": "active"
-      },
-      {
-        "skill_id": "670ee635bcabdd8a",
-        "task": "先用 Python 输出 X",
-        "score": 0.5,
-        "version": 1,
-        "status": "active"
       }
     ]
   },
@@ -330,6 +330,92 @@
     "avg_score_uplift": 0.0,
     "recent": []
   },
+  "adaptive_engine": {
+    "total": 8,
+    "updated_at": 1772246548.5426676,
+    "top": [
+      {
+        "name": "logger",
+        "success_rate": 0.7,
+        "avg_time_ms": 1850.3225,
+        "avg_retries": 0.15,
+        "avg_token_cost": 114.75,
+        "risk_level": 0.2,
+        "usage_count": 1,
+        "last_updated": 1772246548.5426676
+      },
+      {
+        "name": "feedback",
+        "success_rate": 0.7,
+        "avg_time_ms": 1850.3225,
+        "avg_retries": 0.15,
+        "avg_token_cost": 114.75,
+        "risk_level": 0.2,
+        "usage_count": 1,
+        "last_updated": 1772246548.5426676
+      },
+      {
+        "name": "skill",
+        "success_rate": 0.7,
+        "avg_time_ms": 1850.3225,
+        "avg_retries": 0.15,
+        "avg_token_cost": 114.75,
+        "risk_level": 0.2,
+        "usage_count": 1,
+        "last_updated": 1772246548.5426676
+      },
+      {
+        "name": "single_task",
+        "success_rate": 0.7,
+        "avg_time_ms": 1850.3225,
+        "avg_retries": 0.15,
+        "avg_token_cost": 114.75,
+        "risk_level": 0.2,
+        "usage_count": 1,
+        "last_updated": 1772246548.5426676
+      },
+      {
+        "name": "agent",
+        "success_rate": 0.6,
+        "avg_time_ms": 1000.0,
+        "avg_retries": 0.2,
+        "avg_token_cost": 150.0,
+        "risk_level": 0.2,
+        "usage_count": 0,
+        "last_updated": 1772246544.1434836
+      },
+      {
+        "name": "llm_optimizer",
+        "success_rate": 0.6,
+        "avg_time_ms": 1000.0,
+        "avg_retries": 0.2,
+        "avg_token_cost": 150.0,
+        "risk_level": 0.2,
+        "usage_count": 0,
+        "last_updated": 1772246544.1434836
+      },
+      {
+        "name": "planner",
+        "success_rate": 0.6,
+        "avg_time_ms": 1000.0,
+        "avg_retries": 0.2,
+        "avg_token_cost": 150.0,
+        "risk_level": 0.2,
+        "usage_count": 0,
+        "last_updated": 1772246544.1434836
+      },
+      {
+        "name": "parallel_dag",
+        "success_rate": 0.6,
+        "avg_time_ms": 1000.0,
+        "avg_retries": 0.2,
+        "avg_token_cost": 150.0,
+        "risk_level": 0.2,
+        "usage_count": 0,
+        "last_updated": 1772246544.1434836
+      }
+    ]
+  },
   "last_assessment": {
     "risk_level": "low",
     "capability_score": 0.74,
@@ -339,7 +425,7 @@
     "dynamic": {
       "enabled": true,
       "risk_boost": "low",
-      "samples": 90,
+      "samples": 92,
       "fail_rate": 0.022,
       "avg_fix_rounds": 0.022
     },
@@ -347,29 +433,45 @@
   },
   "last_policy": {
     "parallel": false,
-    "max_workers": 4,
+    "max_workers": 1,
     "node_retry_count": 1,
-    "fail_policy": "skip"
+    "fail_policy": "single_task"
   },
   "last_result": {
     "success": true,
     "execution_state": "SUCCESS",
-    "checkpoint_file": "data\\checkpoints\\dag-1772245970844.json",
-    "summary": {
-      "total": 1,
-      "success": 1,
-      "failed": 0,
-      "skipped": 0,
-      "retried_nodes": 0
-    },
-    "node_results": [
-      {
-        "id": "1",
-        "success": true,
-        "skipped": false,
-        "attempts": 1,
-        "latency_ms": 5334.59
+    "adaptive_decision": {
+      "task_profile": {
+        "complexity_score": 0.0917,
+        "estimated_code_size": 33,
+        "risk_level": "low",
+        "domain_type": "python",
+        "requires_parallel": false,
+        "requires_external_tool": false,
+        "time_sensitive": false
+      },
+      "scores": {
+        "logger": 0.280033,
+        "feedback": 0.280033,
+        "skill": 0.280033,
+        "agent": 0.280033,
+        "llm_optimizer": 0.280033,
+        "planner": 0.280033,
+        "single_task": 0.280033,
+        "parallel_dag": 0.280033
+      },
+      "selected_plugins": [
+        "logger",
+        "feedback",
+        "skill"
+      ],
+      "execution_overrides": {
+        "use_planner": false,
+        "dag_parallel": false,
+        "dag_max_workers": 4,
+        "node_retry_count": 1,
+        "dag_fail_policy": "skip"
       }
-    ]
+    }
   }
 }

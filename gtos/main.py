@@ -5,6 +5,7 @@ import argparse
 import logging
 import time
 from pathlib import Path
+from gtos.adaptive_engine import AdaptiveDecisionEngine, CapabilityRegistry, CapabilityStatsUpdater
 from gtos.analytics import RunLogger
 from gtos.analytics.strategy_optimizer import StrategyOptimizer
 from gtos.cognition import SelfCognition
@@ -24,11 +25,16 @@ def _setup_logging(level: str) -> None:
     logging.basicConfig(level=lvl, format="%(levelname)s [%(name)s] %(message)s")
 
 
-def _build_plugins(config: dict, llm_client: LLMClient) -> tuple[PluginManager, object, RunLogger]:
+def _build_plugins(
+    config: dict,
+    llm_client: LLMClient,
+    enabled_plugins: list[str] | None = None,
+    run_logger: RunLogger | None = None,
+) -> tuple[PluginManager, object, RunLogger]:
     paths = config.get("paths", {})
     plugins_cfg = config.get("plugins", {})
     memory_cfg = config.get("memory", {}).get("vector_store", {})
-    enabled = plugins_cfg.get("enabled", [])
+    enabled = enabled_plugins or plugins_cfg.get("enabled", [])
     skill_store = SkillStore(path=paths.get("skills_file"))
 
     vector_store = None
@@ -59,7 +65,7 @@ def _build_plugins(config: dict, llm_client: LLMClient) -> tuple[PluginManager, 
     skill_cfg = plugins_cfg.get("skill", {})
     llm_opt_cfg = plugins_cfg.get("llm_optimizer", {})
     analytics_cfg = config.get("analytics", {})
-    run_logger = RunLogger(
+    run_logger = run_logger or RunLogger(
         runs_path=analytics_cfg.get("runs_file", "data/runs.jsonl"),
         metrics_path=analytics_cfg.get("metrics_file", "data/metrics.json"),
     )
@@ -132,10 +138,9 @@ def execute_once(config_path: str | None = None, task_override: str | None = Non
     optimizer_state = StrategyOptimizer(config.get("optimization", {})).optimize(config)
 
     llm_client = LLMClient(config=config.get("llm", {}))
-    plugin_manager, vector_store, run_logger = _build_plugins(config, llm_client)
-    plugin_manager.start()
     paths = config.get("paths", {})
     exec_cfg = config.get("executor", {})
+    task_prompt = task_override or config.get("default_task", "用 Python 打印 Hello from gtos 并计算 1+2")
 
     code_executor = CodeExecutor(
         llm=llm_client,
@@ -144,8 +149,18 @@ def execute_once(config_path: str | None = None, task_override: str | None = Non
         timeout_seconds=exec_cfg.get("timeout_seconds", 30),
     )
 
-    exec_cfg = config.get("executor", {})
-    task_prompt = task_override or config.get("default_task", "用 Python 打印 Hello from gtos 并计算 1+2")
+    adaptive_cfg = config.get("adaptive_engine", {})
+    adaptive_enabled = bool(adaptive_cfg.get("enabled", True))
+    capability_stats_file = adaptive_cfg.get("stats_file", "data/capability_stats.json")
+    registry = CapabilityRegistry(stats_file=capability_stats_file)
+    stats_updater = CapabilityStatsUpdater(registry=registry, ema_alpha=float(adaptive_cfg.get("ema_alpha", 0.25)))
+
+    analytics_cfg = config.get("analytics", {})
+    run_logger = RunLogger(
+        runs_path=analytics_cfg.get("runs_file", "data/runs.jsonl"),
+        metrics_path=analytics_cfg.get("metrics_file", "data/metrics.json"),
+    )
+
     root_run_id = run_logger.start_run(task_prompt, task_prompt, meta={"phase": "root_task", "level": "task"})
     root_started = time.perf_counter()
     cognition = SelfCognition(config.get("self_cognition", {}))
@@ -170,7 +185,6 @@ def execute_once(config_path: str | None = None, task_override: str | None = Non
             error_type="rejected",
             level="task",
         )
-        plugin_manager.shutdown()
         return {
             "result": {
                 "success": False,
@@ -190,6 +204,29 @@ def execute_once(config_path: str | None = None, task_override: str | None = Non
         }
 
     use_planner = exec_cfg.get("use_planner", False)
+    adaptive_decision: dict = {}
+    plugin_enabled = config.get("plugins", {}).get("enabled", [])
+    selected_plugins = list(plugin_enabled)
+    if adaptive_enabled:
+        adaptive_engine = AdaptiveDecisionEngine(registry=registry)
+        adaptive_decision = adaptive_engine.decide(
+            task_prompt=task_prompt,
+            assessment=assessment,
+            enabled_plugins=plugin_enabled,
+            exec_cfg=exec_cfg,
+        )
+        selected_plugins = adaptive_decision.get("selected_plugins", selected_plugins)
+        overrides = adaptive_decision.get("execution_overrides", {})
+        exec_cfg = {**exec_cfg, **overrides}
+        use_planner = bool(overrides.get("use_planner", use_planner))
+
+    plugin_manager, vector_store, run_logger = _build_plugins(
+        config,
+        llm_client,
+        enabled_plugins=selected_plugins,
+        run_logger=run_logger,
+    )
+    plugin_manager.start()
 
     if use_planner:
         state_machine.transition(ExecutionState.PLANNING, reason="planner_enabled")
@@ -277,8 +314,13 @@ def execute_once(config_path: str | None = None, task_override: str | None = Non
     )
     result["execution_state"] = state_machine.current.value
     result["state_history"] = state_machine.to_dict().get("history", [])
+    if adaptive_decision:
+        result["adaptive_decision"] = adaptive_decision
     total_latency_ms = round((time.perf_counter() - root_started) * 1000, 2)
     result.setdefault("_metrics", {})["latency_ms"] = total_latency_ms
+    if adaptive_enabled and adaptive_decision:
+        selected_caps = list(dict.fromkeys((adaptive_decision.get("selected_plugins", []) or []) + (["planner"] if use_planner else ["single_task"]) + (["parallel_dag"] if policy.get("parallel") else [])))
+        stats_updater.update_from_result(selected_caps, result=result, assessment=assessment)
     run_logger.finish_run(root_run_id, result, level="task")
     dashboard = GodViewBuilder(config.get("visualization", {})).build(
         last_result=result,

@@ -19,6 +19,7 @@ class GodViewBuilder:
         self._window = int(cfg.get("window", 100))
         self._skills_file = Path(cfg.get("skills_file", "data/skills.json"))
         self._skill_drafts_file = Path(cfg.get("skill_drafts_file", "data/skill_drafts.json"))
+        self._capability_stats_file = Path(cfg.get("capability_stats_file", "data/capability_stats.json"))
 
     def build(self, *, last_result: dict[str, Any] | None = None, last_assessment: dict[str, Any] | None = None, last_policy: dict[str, Any] | None = None) -> dict[str, Any]:
         if not self._enabled:
@@ -32,6 +33,7 @@ class GodViewBuilder:
             "ab_metrics": self._load_ab_metrics(),
             "skill_lifecycle": self._load_skill_lifecycle(),
             "skill_drafts": self._load_skill_drafts(),
+            "adaptive_engine": self._load_capability_stats(),
             "last_assessment": last_assessment or {},
             "last_policy": last_policy or {},
             "last_result": self._strip_result(last_result or {}),
@@ -52,6 +54,8 @@ class GodViewBuilder:
             out["checkpoint_file"] = result.get("checkpoint_file")
         if result.get("summary"):
             out["summary"] = result.get("summary")
+        if result.get("adaptive_decision"):
+            out["adaptive_decision"] = result.get("adaptive_decision")
         if result.get("failure_chain"):
             out["failure_chain"] = result.get("failure_chain")
         if result.get("results"):
@@ -88,6 +92,7 @@ class GodViewBuilder:
         s = payload.get("summary", {})
         sl = payload.get("skill_lifecycle", {})
         sd = payload.get("skill_drafts", {})
+        ad = payload.get("adaptive_engine", {})
         lines = [
             "# God View Dashboard",
             "",
@@ -98,6 +103,7 @@ class GodViewBuilder:
             f"- Skills total/active/expired: {sl.get('total', 0)} / {sl.get('active', 0)} / {sl.get('expired', 0)}",
             f"- Skills avg score: {sl.get('avg_score', 0.0)}",
             f"- Skill drafts (proposed): {sd.get('proposed', 0)}",
+            f"- Adaptive capabilities tracked: {ad.get('total', 0)}",
             "",
             "## Last Assessment",
             f"- Risk: {(payload.get('last_assessment', {}) or {}).get('risk_level', '')}",
@@ -195,6 +201,23 @@ class GodViewBuilder:
             "acceptance_rate": round((len(accepted) / len(items)), 4) if items else 0.0,
             "avg_score_uplift": round((sum(uplifts) / len(uplifts)), 4) if uplifts else 0.0,
             "recent": recent,
+        }
+
+    def _load_capability_stats(self) -> dict[str, Any]:
+        if not self._capability_stats_file.exists():
+            return {"total": 0, "top": []}
+        try:
+            with open(self._capability_stats_file, "r", encoding="utf-8") as f:
+                payload = json.load(f)
+        except Exception:
+            return {"total": 0, "top": []}
+        caps = payload.get("capabilities", []) if isinstance(payload, dict) else []
+        items = [x for x in caps if isinstance(x, dict) and x.get("name")]
+        items.sort(key=lambda x: (-float(x.get("success_rate", 0.0) or 0.0), float(x.get("avg_time_ms", 0.0) or 0.0)))
+        return {
+            "total": len(items),
+            "updated_at": payload.get("updated_at", 0),
+            "top": items[:10],
         }
 
     def _read_json_list(self, path: Path) -> list[dict[str, Any]]:

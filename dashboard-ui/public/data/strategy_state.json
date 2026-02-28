@@ -3,11 +3,11 @@
   "mode": "suggest",
   "applied": false,
   "metrics_window": {
-    "window": 50,
-    "success": 49,
+    "window": 51,
+    "success": 50,
     "failed": 1,
-    "success_rate": 0.98,
-    "avg_latency_ms": 12978.88,
+    "success_rate": 0.9803921568627451,
+    "avg_latency_ms": 12829.36,
     "avg_fix_rounds": 0.0,
     "top_errors": [
       {

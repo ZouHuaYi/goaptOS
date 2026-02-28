@@ -141,6 +141,7 @@ export default function App() {
   const policy = dashboard?.last_policy || {}
   const skillLifecycle = dashboard?.skill_lifecycle || {}
   const skillDrafts = dashboard?.skill_drafts || {}
+  const adaptive = dashboard?.adaptive_engine || {}
   const proposed = strategy?.proposed?.executor || {}
   const ab = dashboard?.ab_metrics || {}
   const treatment = ab?.treatment || {}
@@ -165,6 +166,11 @@ export default function App() {
     const rows = skillDrafts?.recent || []
     return rows.map((r, i) => ({ key: i + 1, ...r }))
   }, [skillDrafts])
+
+  const capabilityRows = useMemo(() => {
+    const rows = adaptive?.top || []
+    return rows.map((r, i) => ({ key: i + 1, ...r }))
+  }, [adaptive])
 
   function updateSessionById(sessionId, updater) {
     setSessions((prev) => sortSessions(prev.map((s) => (s.id === sessionId ? updater(s) : s))))
@@ -565,6 +571,7 @@ export default function App() {
                               <Col span={12}><Statistic title="待采纳草案" value={skillDrafts.proposed || 0} /></Col>
                               <Col span={12}><Statistic title="采纳率" value={((skillDrafts.acceptance_rate || 0) * 100).toFixed(2)} suffix="%" /></Col>
                               <Col span={12}><Statistic title="平均分数提升" value={skillDrafts.avg_score_uplift || 0} precision={4} /></Col>
+                              <Col span={12}><Statistic title="能力画像数" value={adaptive.total || 0} /></Col>
                             </Row>
                           </Card>
                         </Space>
@@ -653,6 +660,20 @@ export default function App() {
                                 { title: '目标版本', dataIndex: 'target_version' },
                                 { title: '分数提升', dataIndex: ['acceptance', 'score_uplift'], render: (v) => (v === undefined ? '-' : Number(v).toFixed(4)) },
                                 { title: '状态', dataIndex: 'status', render: (v) => <Tag color={v === 'accepted' ? 'green' : v === 'rejected' ? 'red' : 'gold'}>{v || 'proposed'}</Tag> },
+                              ]}
+                            />
+                          </Card>
+
+                          <Card title="能力优先级画像" style={{ marginTop: 16 }}>
+                            <Table
+                              dataSource={capabilityRows}
+                              rowKey="key"
+                              pagination={{ pageSize: 5, showSizeChanger: false }}
+                              columns={[
+                                { title: '能力', dataIndex: 'name' },
+                                { title: '成功率', dataIndex: 'success_rate', render: (v) => `${(Number(v || 0) * 100).toFixed(1)}%` },
+                                { title: '平均耗时(ms)', dataIndex: 'avg_time_ms', render: (v) => Number(v || 0).toFixed(0) },
+                                { title: '使用次数', dataIndex: 'usage_count' },
                               ]}
                             />
                           </Card>
