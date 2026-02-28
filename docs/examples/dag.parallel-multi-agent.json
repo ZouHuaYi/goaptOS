@@ -1,0 +1,37 @@
+{
+  "name": "multi-agent-parallel-dag-smoke",
+  "description": "并行多节点 + 重试 + continue 容错压测 DAG",
+  "execution_policy": {
+    "parallel": true,
+    "max_workers": 4,
+    "node_retry_count": 3,
+    "fail_policy": "continue"
+  },
+  "nodes": [
+    {
+      "id": "A_prepare_numbers",
+      "deps": [],
+      "prompt": "Agent A: 用 Python 生成 1 到 20000 的整数列表，计算总和与平均值，打印结果。"
+    },
+    {
+      "id": "B_sorting",
+      "deps": [],
+      "prompt": "Agent B: 用 Python 生成 5000 个随机整数，分别用内置排序和手写快速排序，输出两者前 10 个结果与耗时对比。"
+    },
+    {
+      "id": "C_primes_part1",
+      "deps": [],
+      "prompt": "Agent C1: 用 Python 统计 1 到 15000 的质数个数，并打印前 20 个质数。"
+    },
+    {
+      "id": "D_primes_part2",
+      "deps": [],
+      "prompt": "Agent C2: 用 Python 统计 15001 到 30000 的质数个数，并打印该区间前 20 个质数。"
+    },
+    {
+      "id": "E_merge_report",
+      "deps": ["A_prepare_numbers", "B_sorting", "C_primes_part1", "D_primes_part2"],
+      "prompt": "Agent E: 输出一个简短汇总，说明已完成数值统计、排序对比、分片质数统计三类任务，并给出你建议的下一步优化方向（3 条以内）。"
+    }
+  ]
+}

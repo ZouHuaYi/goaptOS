@@ -1,0 +1,33 @@
+{
+  "executor": {
+    "max_fix_rounds": 3,
+    "timeout_seconds": 90,
+    "use_planner": true,
+    "dag_parallel": true,
+    "dag_max_workers": 4,
+    "node_retry_count": 3,
+    "dag_fail_policy": "continue"
+  },
+  "plugins": {
+    "enabled": ["logger", "feedback", "skill", "agent", "llm_optimizer"],
+    "llm_optimizer": {
+      "refine": true
+    }
+  },
+  "runtime": {
+    "react_enabled": true,
+    "max_steps": 6,
+    "reflection_enabled": true,
+    "multi_agent": {
+      "enabled": false,
+      "mode": "planner_executor_reviewer",
+      "max_rounds": 2
+    }
+  },
+  "adaptive_engine": {
+    "enabled": false
+  },
+  "llm": {
+    "timeout_seconds": 90
+  }
+}

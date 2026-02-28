@@ -2,6 +2,7 @@
 """用户入口：从 config 加载配置 → 注册插件 → 规划任务 → 执行闭环。"""
 
 import argparse
+import json
 import logging
 import time
 from pathlib import Path
@@ -37,6 +38,34 @@ from gtos.plugins import (
     ThirdPartyPluginLoader,
 )
 from gtos.runtime import ReActLoop, ReflectionEngine
+
+
+def _load_dag_override(dag_file: str | None) -> tuple[list[dict], dict]:
+    """Load DAG nodes and optional execution policy from a JSON file."""
+    if not dag_file:
+        return [], {}
+    with open(dag_file, "r", encoding="utf-8") as f:
+        payload = json.load(f)
+    if isinstance(payload, list):
+        return payload, {}
+    if not isinstance(payload, dict):
+        raise ValueError("DAG file must be a JSON array or an object containing nodes/dag.")
+    nodes = payload.get("nodes", payload.get("dag", []))
+    if not isinstance(nodes, list):
+        raise ValueError("DAG file field 'nodes' (or 'dag') must be a JSON array.")
+    policy = payload.get("execution_policy", {})
+    if not isinstance(policy, dict):
+        raise ValueError("DAG file field 'execution_policy' must be a JSON object when provided.")
+    normalized_policy: dict[str, object] = {}
+    if "parallel" in policy:
+        normalized_policy["parallel"] = bool(policy["parallel"])
+    if "max_workers" in policy:
+        normalized_policy["max_workers"] = int(policy["max_workers"])
+    if "node_retry_count" in policy:
+        normalized_policy["node_retry_count"] = int(policy["node_retry_count"])
+    if "fail_policy" in policy:
+        normalized_policy["fail_policy"] = str(policy["fail_policy"])
+    return nodes, normalized_policy
 
 
 def _setup_logging(level: str) -> None:
@@ -135,8 +164,8 @@ def _build_plugins(
     return pm, vector_store, run_logger
 
 
-def main(config_path: str | None = None, task_override: str | None = None) -> None:
-    payload = execute_once(config_path=config_path, task_override=task_override)
+def main(config_path: str | None = None, task_override: str | None = None, dag_file: str | None = None) -> None:
+    payload = execute_once(config_path=config_path, task_override=task_override, dag_file=dag_file)
     result = payload["result"]
     optimizer_state = payload["optimizer_state"]
     dashboard_path = payload["dashboard_path"]
@@ -175,7 +204,7 @@ def main(config_path: str | None = None, task_override: str | None = None) -> No
         print("god_view:", dashboard_path)
 
 
-def execute_once(config_path: str | None = None, task_override: str | None = None) -> dict:
+def execute_once(config_path: str | None = None, task_override: str | None = None, dag_file: str | None = None) -> dict:
     state_machine = ExecutionStateMachine()
     config = load_config(config_path)
     _setup_logging(config.get("logging", {}).get("level", "INFO"))
@@ -196,6 +225,9 @@ def execute_once(config_path: str | None = None, task_override: str | None = Non
     paths = config.get("paths", {})
     exec_cfg = config.get("executor", {})
     task_prompt = task_override or config.get("default_task", "用 Python 打印 Hello from gtos 并计算 1+2")
+    dag_override, dag_policy_override = _load_dag_override(dag_file)
+    if dag_override and not task_override:
+        task_prompt = f"执行外部 DAG 文件: {Path(dag_file or '').name}"
 
     code_executor = CodeExecutor(
         llm=llm_client,
@@ -281,6 +313,8 @@ def execute_once(config_path: str | None = None, task_override: str | None = Non
     adaptive_decision: dict = {}
     plugin_enabled = config.get("plugins", {}).get("enabled", [])
     selected_plugins = list(plugin_enabled)
+    runtime_cfg = config.get("runtime", {})
+    multi_agent_cfg = runtime_cfg.get("multi_agent", {}) if isinstance(runtime_cfg.get("multi_agent"), dict) else {}
     if adaptive_enabled:
         adaptive_engine = AdaptiveDecisionEngine(registry=registry, bandit=bandit)
         adaptive_decision = adaptive_engine.decide(
@@ -293,6 +327,13 @@ def execute_once(config_path: str | None = None, task_override: str | None = Non
         overrides = adaptive_decision.get("execution_overrides", {})
         exec_cfg = {**exec_cfg, **overrides}
         use_planner = bool(overrides.get("use_planner", use_planner))
+        if "multi_agent_enabled" in overrides:
+            multi_agent_cfg = {**multi_agent_cfg, "enabled": bool(overrides.get("multi_agent_enabled", False))}
+        if "multi_agent_mode" in overrides:
+            multi_agent_cfg = {**multi_agent_cfg, "mode": str(overrides.get("multi_agent_mode", "planner_executor_reviewer"))}
+        if "multi_agent_max_rounds" in overrides:
+            multi_agent_cfg = {**multi_agent_cfg, "max_rounds": int(overrides.get("multi_agent_max_rounds", 2))}
+        runtime_cfg = {**runtime_cfg, "multi_agent": multi_agent_cfg}
 
     plugin_manager, vector_store, run_logger = _build_plugins(
         config,
@@ -307,12 +348,16 @@ def execute_once(config_path: str | None = None, task_override: str | None = Non
     )
     plugin_manager.start()
 
+    if dag_override:
+        use_planner = True
     if use_planner:
         state_machine.transition(ExecutionState.PLANNING, reason="planner_enabled")
         skill_cfg = config.get("plugins", {}).get("skill", {})
         orchestrator = TaskOrchestrator(vector_store=vector_store, retrieval_top_k=skill_cfg.get("retrieval_top_k", 5))
         policy = orchestrator.derive_execution_policy(exec_cfg, assessment=assessment)
-        dag = orchestrator.plan(task_prompt)
+        if dag_policy_override:
+            policy = {**policy, **dag_policy_override}
+        dag = dag_override if dag_override else orchestrator.plan(task_prompt)
         plugin_manager.event_bus.emit_name(
             EventName.ON_PLAN_GENERATED,
             PlanGeneratedPayload(task=task_prompt, dag_nodes=len(dag), policy=policy),
@@ -328,13 +373,14 @@ def execute_once(config_path: str | None = None, task_override: str | None = Non
                 node_retry_count=policy["node_retry_count"],
                 fail_policy=policy["fail_policy"],
             )
+            if dag_file:
+                result["dag_file"] = str(Path(dag_file).resolve())
         except Exception as e:
             state_machine.transition(ExecutionState.ABORTED, reason="dag_execution_exception", meta={"error": str(e)})
             plugin_manager.apply_on_error(normalize_error(str(e), default_code="dag_execution_exception", retriable=False))
             plugin_manager.shutdown()
             raise
     else:
-        runtime_cfg = config.get("runtime", {})
         multi_agent_cfg = runtime_cfg.get("multi_agent", {}) if isinstance(runtime_cfg.get("multi_agent"), dict) else {}
         profiles = multi_agent_cfg.get("profiles", {}) if isinstance(multi_agent_cfg.get("profiles"), dict) else {}
         policy = {
@@ -497,5 +543,6 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="GTOS 自动代码生成 + 插件扩展")
     parser.add_argument("--config", "-c", default=None, help="配置文件路径（默认项目根 config.json 或环境变量 GTOS_CONFIG）")
     parser.add_argument("--task", "-t", default=None, help="本次执行的任务描述（覆盖 config 中的 default_task）")
+    parser.add_argument("--dag-file", default=None, help="直接执行指定 DAG JSON 文件（数组或 {nodes, execution_policy}）")
     args = parser.parse_args()
-    main(config_path=args.config, task_override=args.task)
+    main(config_path=args.config, task_override=args.task, dag_file=args.dag_file)

@@ -79,6 +79,7 @@ run_web_api.cmd
 | `llm.max_input_tokens` / `llm.max_output_tokens` | 输入截断和输出长度控制 |
 
 指定配置文件路径：`python -m gtos.main --config /path/to/config.json`，或设置环境变量 `GTOS_CONFIG=/path/to/config.json`。
+直接执行外部 DAG：`python -m gtos.main --config docs/examples/config.parallel-dag.optimized.json --dag-file docs/examples/dag.parallel-multi-agent.json`。
 
 ## 架构（自外而内）
 

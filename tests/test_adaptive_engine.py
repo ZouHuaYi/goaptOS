@@ -44,3 +44,18 @@ def test_stats_updater_updates_registry_ema(tmp_path: Path) -> None:
     assert skill.usage_count == 1
     assert skill.success_rate > 0.6
     assert skill.avg_retries >= 0.5
+
+
+def test_adaptive_decision_can_enable_multi_agent_for_complex_single_task(tmp_path: Path) -> None:
+    registry = CapabilityRegistry(stats_file=tmp_path / "capability_stats.json")
+    engine = AdaptiveDecisionEngine(registry=registry, bandit=None)
+    decision = engine.decide(
+        task_prompt="请并行处理多个 python 子任务，快速给出汇总结果",
+        assessment={"risk_level": "low"},
+        enabled_plugins=["logger", "feedback", "skill", "agent", "llm_optimizer"],
+        exec_cfg={"use_planner": False, "dag_parallel": False, "dag_max_workers": 4, "node_retry_count": 0, "dag_fail_policy": "skip"},
+    )
+    overrides = decision.get("execution_overrides", {})
+    assert overrides.get("use_planner") is False
+    assert overrides.get("multi_agent_enabled") is True
+    assert int(overrides.get("multi_agent_max_rounds", 0)) >= 2

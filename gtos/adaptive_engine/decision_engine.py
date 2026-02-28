@@ -96,6 +96,12 @@ class AdaptiveDecisionEngine:
         selected_plugins = list(chosen_combo.get("plugins", []))
         strategy_arm = str(chosen_combo.get("strategy", "single_task"))
         use_planner, dag_parallel = self._arm_to_strategy(strategy_arm, profile, exec_cfg)
+        multi_agent_enabled = self._should_enable_multi_agent(
+            profile=profile,
+            strategy_arm=strategy_arm,
+            enabled_plugins=enabled_plugins or [],
+        )
+        multi_agent_max_rounds = 3 if profile.complexity_score >= 0.75 else 2
 
         overrides = {
             "use_planner": use_planner,
@@ -103,11 +109,15 @@ class AdaptiveDecisionEngine:
             "dag_max_workers": int(exec_cfg.get("dag_max_workers", 4)),
             "node_retry_count": int(exec_cfg.get("node_retry_count", 0)),
             "dag_fail_policy": str(exec_cfg.get("dag_fail_policy", "skip")),
+            "multi_agent_enabled": multi_agent_enabled,
+            "multi_agent_mode": "planner_executor_reviewer",
+            "multi_agent_max_rounds": multi_agent_max_rounds,
         }
         if profile.risk_level in {"high", "blocked"}:
             overrides["dag_max_workers"] = 1
             overrides["node_retry_count"] = max(overrides["node_retry_count"], 1)
             overrides["dag_fail_policy"] = "stop"
+            overrides["multi_agent_enabled"] = False
 
         return {
             "task_profile": profile.to_dict(),
@@ -172,6 +182,17 @@ class AdaptiveDecisionEngine:
                 return True, False
             return True, True
         return True, False
+
+    def _should_enable_multi_agent(self, profile: TaskProfile, strategy_arm: str, enabled_plugins: list[str]) -> bool:
+        if "agent" not in enabled_plugins:
+            return False
+        if profile.risk_level in {"high", "blocked"}:
+            return False
+        if strategy_arm != "single_task":
+            return False
+        if profile.requires_parallel or profile.time_sensitive:
+            return True
+        return profile.complexity_score >= 0.55
 
     def _bucket_name(self, profile: TaskProfile) -> str:
         c = "simple" if profile.complexity_score < 0.35 else ("complex" if profile.complexity_score >= 0.6 else "medium")
