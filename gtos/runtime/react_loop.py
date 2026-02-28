@@ -5,6 +5,13 @@ from __future__ import annotations
 from typing import Any
 
 from gtos.core.event_bus import EventBus
+from gtos.core.events import (
+    ActionPayload,
+    EventName,
+    ExecutionFailurePayload,
+    ExecutionSuccessPayload,
+    ThoughtPayload,
+)
 from gtos.runtime.action_schema import parse_action
 
 
@@ -29,17 +36,23 @@ class ReActLoop:
 
         for step in range(1, self._max_steps + 1):
             thought = self._think(task=task, history=history)
-            self._bus.emit("on_thought", {"step": step, "task": canonical_task, "thought": thought})
+            self._bus.emit_name(EventName.ON_THOUGHT, ThoughtPayload(step=step, task=canonical_task, thought=thought))
 
             action = parse_action(thought)
-            self._bus.emit("on_action", {"step": step, "task": canonical_task, "action": action})
+            self._bus.emit_name(EventName.ON_ACTION, ActionPayload(step=step, task=canonical_task, action=action))
 
             observation = self._execute_action(action=action, task=task, original_task=canonical_task)
             success = bool(observation.get("success"))
             if success:
-                self._bus.emit("on_execution_success", {"step": step, "task": canonical_task, "result": observation})
+                self._bus.emit_name(
+                    EventName.ON_EXECUTION_SUCCESS,
+                    ExecutionSuccessPayload(step=step, task=canonical_task, result=observation),
+                )
             else:
-                self._bus.emit("on_execution_failure", {"step": step, "task": canonical_task, "error_info": observation.get("error", "")})
+                self._bus.emit_name(
+                    EventName.ON_EXECUTION_FAILURE,
+                    ExecutionFailurePayload(step=step, task=canonical_task, error_info=observation.get("error", "")),
+                )
 
             history.append({"step": step, "thought": thought, "action": action, "observation": observation})
             final_result = observation.get("result", {}) if action.get("type") == "finish" else observation
@@ -86,4 +99,3 @@ class ReActLoop:
             "_react_action": action,
         }
         return {"done": False, "success": False, **obs}
-

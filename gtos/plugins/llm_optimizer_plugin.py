@@ -2,6 +2,7 @@
 """智能增强插件：pre 阶段可选调用 LLM 优化任务描述；on_error 可选返回修复建议。"""
 
 import logging
+from gtos.core.events import EventName, ExecutionFailurePayload, TaskPromptActionPayload
 from gtos.core.interfaces.result import normalize_error
 from gtos.executor.plugin_manager import Plugin
 
@@ -13,20 +14,18 @@ class LLMOptimizerPlugin(Plugin):
         self._llm = llm_client
         self._refine = refine and llm_client is not None
 
-    def pre_execute(self, task_prompt: str) -> str:
-        if not self._refine or not self._llm:
-            return task_prompt
-        try:
-            refined = getattr(self._llm, "refine_task", lambda x: x)(task_prompt)
-            if refined and refined.strip():
-                logger.debug("llm_optimizer: refined prompt (len %d)", len(refined))
-                return refined
-        except Exception as e:
-            logger.warning("llm_optimizer refine failed: %s", e)
-        return task_prompt
-
-    def post_execute(self, result: dict) -> dict:
-        return result
-
-    def on_error(self, error_info: object) -> object:
-        return normalize_error(error_info, default_code="execution_error", retriable=False)
+    def on_event(self, event) -> None:
+        if event.name == EventName.ON_ACTION and isinstance(event.payload, TaskPromptActionPayload):
+            if not self._refine or not self._llm:
+                return
+            task_prompt = str(event.payload.task_prompt or "")
+            try:
+                refined = getattr(self._llm, "refine_task", lambda x: x)(task_prompt)
+                if refined and refined.strip():
+                    logger.debug("llm_optimizer: refined prompt (len %d)", len(refined))
+                    event.payload.task_prompt = refined
+            except Exception as e:
+                logger.warning("llm_optimizer refine failed: %s", e)
+            return
+        if event.name == EventName.ON_EXECUTION_FAILURE and isinstance(event.payload, ExecutionFailurePayload):
+            event.payload.error_info = normalize_error(event.payload.error_info, default_code="execution_error", retriable=False)

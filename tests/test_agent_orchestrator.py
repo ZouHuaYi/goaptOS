@@ -1,5 +1,6 @@
 from gtos.agents import AgentOrchestrator, CoderAgent, MemoryAgent, PlannerAgent, ReviewerAgent
 from gtos.core.event_bus import EventBus
+from gtos.core.events import ActionPayload, EventName
 
 
 class _LLM:
@@ -26,7 +27,10 @@ class _Memory:
 def test_orchestrator_planner_executor_reviewer_mode() -> None:
     bus = EventBus()
     seen: list[str] = []
-    bus.subscribe("on_action", lambda payload: seen.append(str(payload.get("type", ""))))
+    bus.subscribe(
+        EventName.ON_ACTION,
+        lambda event: seen.append(event.payload.type) if isinstance(event.payload, ActionPayload) else None,
+    )
 
     orchestrator = AgentOrchestrator(
         planner=PlannerAgent(role="planner"),
@@ -63,4 +67,3 @@ def test_orchestrator_round_robin_mode() -> None:
     )
     assert result["success"] is True
     assert result.get("_agent_orchestration", {}).get("mode") == "round-robin"
-

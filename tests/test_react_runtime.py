@@ -1,6 +1,7 @@
 from pathlib import Path
 import time
 
+from gtos.core.events import EventName
 from gtos.memory.memory_manager import MemoryManager
 from gtos.core.event_bus import EventBus
 from gtos.runtime import ReflectionEngine, ReActLoop, parse_action
@@ -61,9 +62,9 @@ def test_parse_action_fallback_to_code_exec() -> None:
 def test_react_loop_runs_until_success() -> None:
     events: list[str] = []
     bus = EventBus()
-    bus.subscribe("on_thought", lambda payload: events.append("thought"))
-    bus.subscribe("on_action", lambda payload: events.append("action"))
-    bus.subscribe("on_execution_success", lambda payload: events.append("success"))
+    bus.subscribe(EventName.ON_THOUGHT, lambda event: events.append("thought"))
+    bus.subscribe(EventName.ON_ACTION, lambda event: events.append("action"))
+    bus.subscribe(EventName.ON_EXECUTION_SUCCESS, lambda event: events.append("success"))
     loop = ReActLoop(llm=_StubLLM(), code_executor=_StubExecutor(), event_bus=bus, max_steps=3)
     result = loop.run("compute 1+2")
     assert result["success"] is True

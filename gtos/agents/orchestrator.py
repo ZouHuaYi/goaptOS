@@ -5,6 +5,7 @@ from __future__ import annotations
 from typing import Any
 
 from gtos.agents.base_agent import BaseAgent
+from gtos.core.events import ActionPayload, EventName, ThoughtPayload
 
 
 class AgentOrchestrator:
@@ -47,7 +48,10 @@ class AgentOrchestrator:
         if self._memory:
             mem = self._memory.act(task, {**ctx, "result": result})
             trace.append({"agent": self._memory.role, "phase": "act", "output": mem})
-            self._emit("on_action", {"type": "agent_memory", "agent": self._memory.role, "output": mem})
+            self._emit(
+                EventName.ON_ACTION,
+                ActionPayload(type="agent_memory", agent=self._memory.role, task=task, output=mem),
+            )
 
         out = dict(result)
         out["agent_trace"] = trace
@@ -56,10 +60,13 @@ class AgentOrchestrator:
 
     def _run_planner_executor_reviewer(self, task: str, ctx: dict[str, Any], trace: list[dict[str, Any]]) -> dict[str, Any]:
         planner_thought = self._planner.think(task, ctx)
-        self._emit("on_thought", {"agent": self._planner.role, "thought": planner_thought, "task": task})
+        self._emit(EventName.ON_THOUGHT, ThoughtPayload(task=task, thought=planner_thought, agent=self._planner.role))
         plan = self._planner.act(task, ctx)
         trace.append({"agent": self._planner.role, "phase": "act", "output": plan})
-        self._emit("on_action", {"type": "agent_plan", "agent": self._planner.role, "output": plan})
+        self._emit(
+            EventName.ON_ACTION,
+            ActionPayload(type="agent_plan", agent=self._planner.role, task=task, output=plan),
+        )
 
         refined_task = str(plan.get("refined_task", task) or task)
         code_result = self._coder.act(refined_task, {**ctx, "original_task": task})
@@ -67,7 +74,10 @@ class AgentOrchestrator:
 
         review = self._reviewer.act(task, {**ctx, "result": code_result})
         trace.append({"agent": self._reviewer.role, "phase": "act", "output": review})
-        self._emit("on_action", {"type": "agent_review", "agent": self._reviewer.role, "output": review})
+        self._emit(
+            EventName.ON_ACTION,
+            ActionPayload(type="agent_review", agent=self._reviewer.role, task=task, output=review),
+        )
         code_result["_agent_review"] = review.get("review", {})
         return code_result
 
@@ -104,7 +114,6 @@ class AgentOrchestrator:
         best["_agent_review"] = review.get("review", {})
         return best
 
-    def _emit(self, event_name: str, payload: dict[str, Any]) -> None:
-        if self._bus and hasattr(self._bus, "emit"):
-            self._bus.emit(event_name, payload)
-
+    def _emit(self, event_name: EventName, payload: Any) -> None:
+        if self._bus and hasattr(self._bus, "emit_name"):
+            self._bus.emit_name(event_name, payload)

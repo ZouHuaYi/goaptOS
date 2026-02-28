@@ -8,6 +8,7 @@ from urllib import parse
 
 from gtos.config import load_config
 from gtos.main import execute_once
+from gtos.observability import EventTraceReplayer
 from gtos.plugins import PluginMarketplace
 
 
@@ -96,6 +97,14 @@ def _build_market() -> PluginMarketplace:
     )
 
 
+def _event_trace_tool() -> EventTraceReplayer:
+    cfg = load_config()
+    plugins = cfg.get("plugins", {}) if isinstance(cfg.get("plugins", {}), dict) else {}
+    rec = plugins.get("event_recorder", {}) if isinstance(plugins.get("event_recorder", {}), dict) else {}
+    trace_file = rec.get("trace_file", "data/runtime_events.jsonl")
+    return EventTraceReplayer(trace_file)
+
+
 class ChatHandler(BaseHTTPRequestHandler):
     def _send_json(self, status: int, payload: dict) -> None:
         body = json.dumps(payload, ensure_ascii=False).encode("utf-8")
@@ -149,6 +158,21 @@ class ChatHandler(BaseHTTPRequestHandler):
             name = str((params.get("name") or [""])[0] or "").strip()
             market = _build_market()
             self._send_json(200, {"ok": True, "name": name, "versions": market.list_versions(name)})
+            return
+        if self.path.startswith("/api/events/summary"):
+            tool = _event_trace_tool()
+            self._send_json(200, {"ok": True, **tool.summary()})
+            return
+        if self.path.startswith("/api/events/recent"):
+            q = parse.urlparse(self.path).query
+            params = parse.parse_qs(q)
+            limit_raw = str((params.get("limit") or ["100"])[0] or "100")
+            try:
+                limit = max(1, min(500, int(limit_raw)))
+            except Exception:
+                limit = 100
+            tool = _event_trace_tool()
+            self._send_json(200, {"ok": True, "events": tool.recent(limit=limit), "limit": limit})
             return
         self._send_json(404, {"ok": False, "error": "not_found"})
 

@@ -18,6 +18,7 @@ from gtos.analytics.prompt_auto_optimizer import PromptAutoOptimizer
 from gtos.analytics.strategy_optimizer import StrategyOptimizer
 from gtos.cognition import SelfCognition
 from gtos.config import load_config
+from gtos.core.events import EventName, PlanGeneratedPayload, ReflectionCompletePayload
 from gtos.core.interfaces.result import append_log, normalize_error
 from gtos.core.llm import LLMClient
 from gtos.executor import CodeExecutor, PluginManager, SkillStore, TaskOrchestrator
@@ -26,7 +27,15 @@ from gtos.executor.transaction import TaskTransactionManager
 from gtos.memory import MemoryManager, get_vector_store
 from gtos.metrics import MetricsCollector
 from gtos.observability import GodViewBuilder
-from gtos.plugins import AgentPlugin, FeedbackPlugin, LLMOptimizerPlugin, LoggerPlugin, SkillPlugin, ThirdPartyPluginLoader
+from gtos.plugins import (
+    AgentPlugin,
+    EventRecorderPlugin,
+    FeedbackPlugin,
+    LLMOptimizerPlugin,
+    LoggerPlugin,
+    SkillPlugin,
+    ThirdPartyPluginLoader,
+)
 from gtos.runtime import ReActLoop, ReflectionEngine
 
 
@@ -44,8 +53,11 @@ def _build_plugins(
     paths = config.get("paths", {})
     plugins_cfg = config.get("plugins", {})
     third_party_cfg = plugins_cfg.get("third_party", {}) if isinstance(plugins_cfg.get("third_party", {}), dict) else {}
+    event_recorder_cfg = plugins_cfg.get("event_recorder", {}) if isinstance(plugins_cfg.get("event_recorder", {}), dict) else {}
     memory_cfg = config.get("memory", {}).get("vector_store", {})
     enabled = enabled_plugins or plugins_cfg.get("enabled", [])
+    if bool(event_recorder_cfg.get("enabled", False)) and "event_recorder" not in enabled:
+        enabled = list(enabled) + ["event_recorder"]
     skill_store = SkillStore(path=paths.get("skills_file"))
 
     vector_store = None
@@ -94,6 +106,10 @@ def _build_plugins(
         ),
         "agent": AgentPlugin(),
         "llm_optimizer": LLMOptimizerPlugin(llm_client=llm_client, refine=llm_opt_cfg.get("refine", False)),
+        "event_recorder": EventRecorderPlugin(
+            trace_file=event_recorder_cfg.get("trace_file", "data/runtime_events.jsonl"),
+            enabled=bool(event_recorder_cfg.get("enabled", False)),
+        ),
     }
     pm = PluginManager()
     for name in enabled:
@@ -297,7 +313,10 @@ def execute_once(config_path: str | None = None, task_override: str | None = Non
         orchestrator = TaskOrchestrator(vector_store=vector_store, retrieval_top_k=skill_cfg.get("retrieval_top_k", 5))
         policy = orchestrator.derive_execution_policy(exec_cfg, assessment=assessment)
         dag = orchestrator.plan(task_prompt)
-        plugin_manager.event_bus.emit("on_plan_generated", {"task": task_prompt, "dag_nodes": len(dag), "policy": policy})
+        plugin_manager.event_bus.emit_name(
+            EventName.ON_PLAN_GENERATED,
+            PlanGeneratedPayload(task=task_prompt, dag_nodes=len(dag), policy=policy),
+        )
         state_machine.transition(ExecutionState.EXECUTING, reason="dag_execution_start", meta={"nodes": len(dag)})
         try:
             result = orchestrator.execute(
@@ -412,7 +431,10 @@ def execute_once(config_path: str | None = None, task_override: str | None = Non
             )
             reflection = reflector.reflect(task=task_prompt, result=result, trace=result.get("react_trace", []))
             result["reflection"] = reflection
-            plugin_manager.event_bus.emit("on_reflection_complete", {"task": task_prompt, "reflection": reflection, "result": result})
+            plugin_manager.event_bus.emit_name(
+                EventName.ON_REFLECTION_COMPLETE,
+                ReflectionCompletePayload(task=task_prompt, reflection=reflection, result=result),
+            )
 
     cognition.update_capability(result)
     if result.get("summary", {}).get("retried_nodes", 0) > 0 or result.get("_execution", {}).get("had_retry"):

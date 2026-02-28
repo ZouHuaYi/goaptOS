@@ -6,6 +6,7 @@ from gtos.plugins.llm_optimizer_plugin import LLMOptimizerPlugin
 from gtos.plugins.feedback_plugin import FeedbackPlugin
 from gtos.plugins.loader import ThirdPartyPluginLoader
 from gtos.plugins.marketplace import PluginMarketplace
+from gtos.plugins.event_recorder_plugin import EventRecorderPlugin
 from gtos.plugins.sdk import PluginManifest, parse_plugin_manifest
 
 __all__ = [
@@ -14,6 +15,7 @@ __all__ = [
     "AgentPlugin",
     "LLMOptimizerPlugin",
     "FeedbackPlugin",
+    "EventRecorderPlugin",
     "PluginManifest",
     "PluginMarketplace",
     "ThirdPartyPluginLoader",

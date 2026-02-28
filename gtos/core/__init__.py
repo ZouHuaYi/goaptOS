@@ -1,6 +1,7 @@
 # gtos/core/__init__.py
 from gtos.core.llm import LLMClient
 from gtos.core.event_bus import EventBus
+from gtos.core.events import EventName, RuntimeEvent
 from gtos.core.interfaces import (
     ErrorInfo,
     ExecutionResult,
@@ -15,6 +16,7 @@ from gtos.core.interfaces import (
 
 __all__ = [
     "ErrorInfo",
+    "EventName",
     "EventBus",
     "ExecutionResult",
     "LLMClient",
@@ -24,5 +26,6 @@ __all__ = [
     "SkillStoreProtocol",
     "TaskExecutor",
     "TaskSpec",
+    "RuntimeEvent",
     "failure_result",
 ]

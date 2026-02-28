@@ -51,6 +51,10 @@ def _default_config() -> dict[str, Any]:
         },
         "plugins": {
             "enabled": ["logger", "feedback", "skill", "agent", "llm_optimizer"],
+            "event_recorder": {
+                "enabled": False,
+                "trace_file": str(data_dir / "runtime_events.jsonl"),
+            },
             "third_party": {
                 "enabled": True,
                 "dir": str(root / "plugins" / "third_party"),
@@ -266,6 +270,12 @@ def _resolve_paths(cfg: dict[str, Any], root: Path) -> dict[str, Any]:
     out["visualization"] = vis_resolved
     plugins = out.get("plugins", {})
     if isinstance(plugins, dict):
+        er = plugins.get("event_recorder", {})
+        if isinstance(er, dict):
+            tf = er.get("trace_file")
+            if isinstance(tf, str) and tf and not Path(tf).is_absolute():
+                er["trace_file"] = str((root / tf).resolve())
+            plugins["event_recorder"] = er
         tp = plugins.get("third_party", {})
         if isinstance(tp, dict):
             d = tp.get("dir")

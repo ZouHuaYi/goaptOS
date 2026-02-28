@@ -2,6 +2,7 @@ import time
 from pathlib import Path
 
 from gtos.executor.plugin_manager import PluginManager
+from gtos.core.events import EventName, ReflectionCompletePayload
 from gtos.plugins.loader import ThirdPartyPluginLoader
 from gtos.plugins.sdk import parse_plugin_manifest
 
@@ -28,14 +29,16 @@ def _prepare_plugin_root() -> Path:
         "\n".join(
             [
                 "from gtos.core.interfaces.plugin import PluginLifecycle",
+                "from gtos.core.events import EventName, TaskPromptActionPayload",
                 "",
                 "class Plugin(PluginLifecycle):",
                 "    def __init__(self, **kwargs):",
                 "        self._kwargs = kwargs",
-                "    def pre_execute(self, task_prompt: str) -> str:",
-                "        return task_prompt + ' [tp]'",
-                "    def on_event(self, event_name: str, payload: dict) -> None:",
-                "        payload.setdefault('_seen', []).append(event_name)",
+                "    def on_event(self, event) -> None:",
+                "        if event.name == EventName.ON_ACTION and isinstance(event.payload, TaskPromptActionPayload):",
+                "            event.payload.task_prompt = str(event.payload.task_prompt) + ' [tp]'",
+                "        if hasattr(event.payload, 'result') and isinstance(getattr(event.payload, 'result', None), dict):",
+                "            event.payload.result.setdefault('_seen', []).append(event.name.value)",
             ]
         ),
         encoding="utf-8",
@@ -64,9 +67,11 @@ def test_third_party_loader_discover_and_register() -> None:
     pm.register(plugin)
     pm.start()
     out = pm.apply_pre_execute("hello")
-    payload = pm.event_bus.emit("on_reflection_complete", {"x": 1})
+    evt = pm.event_bus.emit_name(
+        EventName.ON_REFLECTION_COMPLETE,
+        ReflectionCompletePayload(task="t", reflection={}, result={"x": 1}),
+    )
     pm.shutdown()
 
     assert out.endswith("[tp]")
-    assert "on_reflection_complete" in payload.get("_seen", [])
-
+    assert "on_reflection_complete" in evt.payload.result.get("_seen", [])

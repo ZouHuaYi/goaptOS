@@ -7,6 +7,7 @@ import threading
 import time
 from pathlib import Path
 
+from gtos.core.events import EventName, ExecutionFailurePayload, ExecutionSuccessPayload, TaskPromptActionPayload
 from gtos.core.interfaces.result import append_log, normalize_error
 from gtos.executor.plugin_manager import Plugin
 from gtos.executor.skill_store import SkillStore
@@ -44,7 +45,7 @@ class SkillPlugin(Plugin):
         self._ab_salt = str(cfg.get("salt", "skill-ab-v1"))
         self._ab_metrics_path = Path(cfg.get("metrics_file", "data/skill_ab_metrics.json"))
 
-    def pre_execute(self, task_prompt: str) -> str:
+    def _pre_execute(self, task_prompt: str) -> str:
         bucket = self._pick_bucket(task_prompt)
         self._local.ab_bucket = bucket
         self._local.applied_draft_id = ""
@@ -83,7 +84,7 @@ class SkillPlugin(Plugin):
             ]
         return self._matcher.build_context(task_prompt, hits) if hits else task_prompt
 
-    def post_execute(self, result: dict) -> dict:
+    def _post_execute(self, result: dict) -> dict:
         out = dict(result)
         bucket = getattr(self._local, "ab_bucket", "unknown")
         self._update_ab_metrics(bucket=bucket, result=out)
@@ -134,8 +135,17 @@ class SkillPlugin(Plugin):
             out = append_log(out, level="error", event="plugin.skill.auto_optimize_failed", message=str(e)[:240])
         return out
 
-    def on_error(self, error_info: object) -> object:
-        return normalize_error(error_info, default_code="skill_error", retriable=False)
+    def on_event(self, event) -> None:
+        if event.name == EventName.ON_ACTION and isinstance(event.payload, TaskPromptActionPayload):
+            event.payload.task_prompt = self._pre_execute(str(event.payload.task_prompt or ""))
+            return
+        if event.name == EventName.ON_EXECUTION_SUCCESS and isinstance(event.payload, ExecutionSuccessPayload):
+            result = event.payload.result
+            if isinstance(result, dict):
+                event.payload.result = self._post_execute(result)
+            return
+        if event.name == EventName.ON_EXECUTION_FAILURE and isinstance(event.payload, ExecutionFailurePayload):
+            event.payload.error_info = normalize_error(event.payload.error_info, default_code="skill_error", retriable=False)
 
     def _pick_bucket(self, task_prompt: str) -> str:
         mode = self._ab_mode

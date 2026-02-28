@@ -135,6 +135,8 @@ export default function App() {
   const [strategy, setStrategy] = useState(null)
   const [runtimeStatus, setRuntimeStatus] = useState(null)
   const [pluginMarket, setPluginMarket] = useState(null)
+  const [eventSummary, setEventSummary] = useState(null)
+  const [recentEvents, setRecentEvents] = useState([])
   const [pluginVersions, setPluginVersions] = useState({})
   const [chatInput, setChatInput] = useState('')
   const [chatLoading, setChatLoading] = useState(false)
@@ -247,21 +249,35 @@ export default function App() {
     return rows.map((r, i) => ({ key: i + 1, ...r }))
   }, [pluginMarket])
 
+  const eventRows = useMemo(() => {
+    return (recentEvents || []).map((e, i) => ({
+      key: i + 1,
+      ts: e?.ts || 0,
+      name: e?.name || '',
+      payload_type: e?.payload_type || '',
+      payload: e?.payload || {},
+    }))
+  }, [recentEvents])
+
   function updateSessionById(sessionId, updater) {
     setSessions((prev) => sortSessions(prev.map((s) => (s.id === sessionId ? updater(s) : s))))
   }
 
   async function refreshAll() {
-    const [d, s, rt, pm] = await Promise.all([
+    const [d, s, rt, pm, es, er] = await Promise.all([
       safeFetch('/data/dashboard.json'),
       safeFetch('/data/strategy_state.json'),
       safeFetch('/api/runtime/status'),
       safeFetch('/api/plugins/market'),
+      safeFetch('/api/events/summary'),
+      safeFetch('/api/events/recent?limit=120'),
     ])
     setDashboard(d)
     setStrategy(s)
     setRuntimeStatus(rt)
     setPluginMarket(pm)
+    setEventSummary(es)
+    setRecentEvents(er?.events || [])
     const installed = (pm?.installed || []).map((x) => String(x?.name || '')).filter(Boolean)
     if (installed.length > 0) {
       const entries = await Promise.all(
@@ -875,6 +891,34 @@ export default function App() {
                                 </Text>
                               </Descriptions.Item>
                             </Descriptions>
+                          </Card>
+
+                          <Card title="事件时间线" style={{ marginTop: 16 }}>
+                            <Paragraph type="secondary" style={{ marginBottom: 10 }}>
+                              总事件数：{eventSummary?.total ?? 0}
+                            </Paragraph>
+                            <Table
+                              dataSource={eventRows}
+                              rowKey="key"
+                              pagination={{ pageSize: 6, showSizeChanger: false }}
+                              columns={[
+                                {
+                                  title: '时间',
+                                  dataIndex: 'ts',
+                                  render: (v) => (v ? new Date(Number(v) * 1000).toLocaleString() : '-'),
+                                },
+                                { title: '事件', dataIndex: 'name' },
+                                { title: '类型', dataIndex: 'payload_type' },
+                                {
+                                  title: '摘要',
+                                  dataIndex: 'payload',
+                                  render: (v) => {
+                                    const s = JSON.stringify(v || {})
+                                    return <Text ellipsis style={{ maxWidth: 240, display: 'inline-block' }}>{s}</Text>
+                                  },
+                                },
+                              ]}
+                            />
                           </Card>
 
                           <Card

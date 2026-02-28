@@ -1,12 +1,12 @@
 {
-  "updated_ts": 1772255355.1629293,
-  "runs_total": 59,
-  "runs_success": 57,
+  "updated_ts": 1772256037.8406453,
+  "runs_total": 61,
+  "runs_success": 59,
   "runs_failed": 2,
-  "task_runs_total": 59,
-  "node_runs_total": 81,
-  "success_rate": 0.9661016949152542,
-  "avg_latency_ms": 14546.52,
+  "task_runs_total": 61,
+  "node_runs_total": 83,
+  "success_rate": 0.9672131147540983,
+  "avg_latency_ms": 15073.69,
   "avg_fix_rounds": 0.05,
   "top_error_types": [
     {
@@ -19,8 +19,6 @@
     }
   ],
   "recent_run_ids": [
-    "91d3a3ca-f1a3-4f68-96c5-8e54a83dfc67",
-    "219e080b-7834-4cfb-aa5b-35fec1d96c9d",
     "06e99cf5-4355-4b7c-9708-f4ae7c4ea7bc",
     "f08e9cc3-b689-4fef-9ea4-8f8a8a8ac9e1",
     "c370f743-9030-4dde-890b-53216741959e",
@@ -38,11 +36,11 @@
     "f43332b0-ea98-4131-ba75-e604f7cb7f16",
     "08ed14d7-1fd0-4724-aa0d-e021195c56ac",
     "5f586875-87d8-478f-a7e1-084eab05e65b",
-    "3527ccd9-3063-431b-a6b9-6c368714cc0b"
+    "3527ccd9-3063-431b-a6b9-6c368714cc0b",
+    "b4c3d103-efd7-46ac-9e37-36aa8c393f70",
+    "4143e224-335c-442c-a4ad-26ef06d2f834"
   ],
   "recent_tasks": [
-    "你python 能输出什么来，生成一份 pdf 给我",
-    "研究中国AI 的 2025的报告，pdf 给我",
     "你具备什么能力",
     "你具备什么能力",
     "用 Python 计算 1+2 并打印结果",
@@ -60,6 +58,8 @@
     "请用 Python 计算 1+2 并打印结果",
     "请并行处理两个 Python 子任务，分别输出 A 和 B",
     "请用 Python 计算 1+2 并打印结果",
-    "你爱吃什么"
+    "你爱吃什么",
+    "你喜欢吃什么",
+    "2+9 * 10 等于多少"
   ]
 }

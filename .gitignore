@@ -25,7 +25,8 @@ pip-wheel-metadata/
 htmlcov/
 node_modules/
 test/
-data/
+data/*
+.tmp_pytest/
 
 # IDE/editor
 .vscode/
