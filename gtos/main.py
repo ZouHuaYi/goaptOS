@@ -5,6 +5,7 @@ import argparse
 import logging
 import time
 from pathlib import Path
+from gtos.agents import AgentOrchestrator, CoderAgent, MemoryAgent, PlannerAgent, ReviewerAgent
 from gtos.adaptive_engine import (
     AdaptiveDecisionEngine,
     CapabilityRegistry,
@@ -13,6 +14,7 @@ from gtos.adaptive_engine import (
     TaskBucketBandit,
 )
 from gtos.analytics import RunLogger
+from gtos.analytics.prompt_auto_optimizer import PromptAutoOptimizer
 from gtos.analytics.strategy_optimizer import StrategyOptimizer
 from gtos.cognition import SelfCognition
 from gtos.config import load_config
@@ -21,9 +23,11 @@ from gtos.core.llm import LLMClient
 from gtos.executor import CodeExecutor, PluginManager, SkillStore, TaskOrchestrator
 from gtos.executor.state_machine import ExecutionState, ExecutionStateMachine
 from gtos.executor.transaction import TaskTransactionManager
-from gtos.memory import get_vector_store
+from gtos.memory import MemoryManager, get_vector_store
+from gtos.metrics import MetricsCollector
 from gtos.observability import GodViewBuilder
 from gtos.plugins import AgentPlugin, FeedbackPlugin, LLMOptimizerPlugin, LoggerPlugin, SkillPlugin
+from gtos.runtime import ReActLoop, ReflectionEngine
 
 
 def _setup_logging(level: str) -> None:
@@ -142,8 +146,19 @@ def execute_once(config_path: str | None = None, task_override: str | None = Non
     config = load_config(config_path)
     _setup_logging(config.get("logging", {}).get("level", "INFO"))
     optimizer_state = StrategyOptimizer(config.get("optimization", {})).optimize(config)
+    prompt_auto_cfg = ((config.get("optimization", {}) or {}).get("prompt_auto", {}) or {})
+    prompt_optimizer = PromptAutoOptimizer(prompt_auto_cfg if isinstance(prompt_auto_cfg, dict) else {})
+    metrics_collector = MetricsCollector(
+        (prompt_auto_cfg or {}).get("metrics_file", "data/prompt_metrics.jsonl")
+        if isinstance(prompt_auto_cfg, dict)
+        else "data/prompt_metrics.jsonl"
+    )
 
     llm_client = LLMClient(config=config.get("llm", {}))
+    persisted_prompt_state = prompt_optimizer.load_state()
+    persisted_profiles = persisted_prompt_state.get("profiles", {}) if isinstance(persisted_prompt_state, dict) else {}
+    if isinstance(persisted_profiles, dict) and persisted_profiles:
+        llm_client.set_prompt_overrides(persisted_profiles)
     paths = config.get("paths", {})
     exec_cfg = config.get("executor", {})
     task_prompt = task_override or config.get("default_task", "用 Python 打印 Hello from gtos 并计算 1+2")
@@ -194,24 +209,34 @@ def execute_once(config_path: str | None = None, task_override: str | None = Non
     if decision.get("action") == "reject":
         state_machine.transition(ExecutionState.ABORTED, reason="self_cognition_reject", meta={"reason": decision.get("reason", "")})
         reject_error = normalize_error(decision.get("reason") or "self cognition rejected task", default_code="self_cognition_reject", retriable=False)
+        reject_result = {
+            "success": False,
+            "rejected": True,
+            "reason": reject_error.get("message"),
+            "_error": reject_error,
+            "risk": assessment.get("risk_level"),
+            "capability_score": assessment.get("capability_score"),
+            "dynamic": assessment.get("dynamic"),
+            "execution_state": state_machine.current.value,
+            "state_history": state_machine.to_dict().get("history", []),
+        }
         run_logger.finish_run(
             root_run_id,
             {"success": False, "error": reject_error.get("message"), "_error": reject_error, "_metrics": {"latency_ms": 0.0}, "fix_rounds": 0},
             error_type="rejected",
             level="task",
         )
+        prompt_opt_state: dict = {}
+        if bool(prompt_auto_cfg.get("enabled", True)) if isinstance(prompt_auto_cfg, dict) else True:
+            metrics_collector.record_run(task_prompt=task_prompt, result=reject_result)
+            summary = metrics_collector.summarize(window=prompt_optimizer.window)
+            prompt_opt_state = prompt_optimizer.optimize(
+                metrics=summary,
+                current_profiles=llm_client.get_prompt_profiles(),
+            )
+            reject_result["prompt_optimization"] = prompt_opt_state
         return {
-            "result": {
-                "success": False,
-                "rejected": True,
-                "reason": reject_error.get("message"),
-                "_error": reject_error,
-                "risk": assessment.get("risk_level"),
-                "capability_score": assessment.get("capability_score"),
-                "dynamic": assessment.get("dynamic"),
-                "execution_state": state_machine.current.value,
-                "state_history": state_machine.to_dict().get("history", []),
-            },
+            "result": reject_result,
             "assessment": assessment,
             "optimizer_state": optimizer_state,
             "dashboard_path": config.get("visualization", {}).get("json_file", "data/dashboard.json"),
@@ -241,6 +266,11 @@ def execute_once(config_path: str | None = None, task_override: str | None = Non
         enabled_plugins=selected_plugins,
         run_logger=run_logger,
     )
+    memory_manager = MemoryManager(
+        sqlite_db=paths.get("sqlite_db", "data/gtos.db"),
+        vector_store=vector_store,
+        skill_store=code_executor.skill_store,
+    )
     plugin_manager.start()
 
     if use_planner:
@@ -249,6 +279,7 @@ def execute_once(config_path: str | None = None, task_override: str | None = Non
         orchestrator = TaskOrchestrator(vector_store=vector_store, retrieval_top_k=skill_cfg.get("retrieval_top_k", 5))
         policy = orchestrator.derive_execution_policy(exec_cfg, assessment=assessment)
         dag = orchestrator.plan(task_prompt)
+        plugin_manager.event_bus.emit("on_plan_generated", {"task": task_prompt, "dag_nodes": len(dag), "policy": policy})
         state_machine.transition(ExecutionState.EXECUTING, reason="dag_execution_start", meta={"nodes": len(dag)})
         try:
             result = orchestrator.execute(
@@ -266,6 +297,9 @@ def execute_once(config_path: str | None = None, task_override: str | None = Non
             plugin_manager.shutdown()
             raise
     else:
+        runtime_cfg = config.get("runtime", {})
+        multi_agent_cfg = runtime_cfg.get("multi_agent", {}) if isinstance(runtime_cfg.get("multi_agent"), dict) else {}
+        profiles = multi_agent_cfg.get("profiles", {}) if isinstance(multi_agent_cfg.get("profiles"), dict) else {}
         policy = {
             "parallel": False,
             "max_workers": 1,
@@ -277,7 +311,43 @@ def execute_once(config_path: str | None = None, task_override: str | None = Non
         state_machine.transition(ExecutionState.EXECUTING, reason="single_task_execution_start")
         prompt = plugin_manager.apply_pre_execute(task_prompt)
         try:
-            result = code_executor.execute_task(prompt, original_task=task_prompt)
+            if bool(multi_agent_cfg.get("enabled", False)):
+                loop = ReActLoop(
+                    llm=llm_client,
+                    code_executor=code_executor,
+                    event_bus=plugin_manager.event_bus,
+                    max_steps=int(runtime_cfg.get("max_steps", 6)),
+                )
+                orchestrator = AgentOrchestrator(
+                    planner=PlannerAgent(role="planner", profile=profiles.get("planner", {})),
+                    coder=CoderAgent(role="coder", profile=profiles.get("coder", {})),
+                    reviewer=ReviewerAgent(role="reviewer", profile=profiles.get("reviewer", {})),
+                    memory_agent=MemoryAgent(role="memory", profile=profiles.get("memory", {})),
+                    event_bus=plugin_manager.event_bus,
+                )
+                result = orchestrator.execute(
+                    prompt,
+                    mode=str(multi_agent_cfg.get("mode", "planner_executor_reviewer")),
+                    max_rounds=int(multi_agent_cfg.get("max_rounds", 2)),
+                    context={
+                        "llm": llm_client,
+                        "react_loop": loop if bool(runtime_cfg.get("react_enabled", True)) else None,
+                        "code_executor": code_executor,
+                        "memory": vector_store,
+                        "memory_manager": memory_manager,
+                        "original_task": task_prompt,
+                    },
+                )
+            elif bool(runtime_cfg.get("react_enabled", True)):
+                loop = ReActLoop(
+                    llm=llm_client,
+                    code_executor=code_executor,
+                    event_bus=plugin_manager.event_bus,
+                    max_steps=int(runtime_cfg.get("max_steps", 6)),
+                )
+                result = loop.run(prompt, original_task=task_prompt)
+            else:
+                result = code_executor.execute_task(prompt, original_task=task_prompt)
         except Exception as e:
             state_machine.transition(ExecutionState.ABORTED, reason="single_task_exception", meta={"error": str(e)})
             tx_manager.record_attempt("single_task", 1, False, str(e))
@@ -314,6 +384,17 @@ def execute_once(config_path: str | None = None, task_override: str | None = Non
             "checkpoint_file": tx_manager.path,
             "task": tx_manager.get_task("single_task"),
         }
+        if bool(runtime_cfg.get("reflection_enabled", True)):
+            reflector = ReflectionEngine(
+                llm=llm_client,
+                output_file=runtime_cfg.get("reflection_file", "data/reflections.jsonl"),
+                skill_store=code_executor.skill_store,
+                vector_store=vector_store,
+                memory_manager=memory_manager,
+            )
+            reflection = reflector.reflect(task=task_prompt, result=result, trace=result.get("react_trace", []))
+            result["reflection"] = reflection
+            plugin_manager.event_bus.emit("on_reflection_complete", {"task": task_prompt, "reflection": reflection, "result": result})
 
     cognition.update_capability(result)
     if result.get("summary", {}).get("retried_nodes", 0) > 0 or result.get("_execution", {}).get("had_retry"):
@@ -345,6 +426,17 @@ def execute_once(config_path: str | None = None, task_override: str | None = Non
             bandit.update(bucket=bucket, arm_name=selected_arm, reward=reward, selected_algo=selected_algo)
             result.setdefault("adaptive_decision", {}).setdefault("bandit", {})["reward"] = reward
     run_logger.finish_run(root_run_id, result, level="task")
+    prompt_opt_state: dict = {}
+    if bool(prompt_auto_cfg.get("enabled", True)) if isinstance(prompt_auto_cfg, dict) else True:
+        metrics_collector.record_run(task_prompt=task_prompt, result=result)
+        summary = metrics_collector.summarize(window=prompt_optimizer.window)
+        prompt_opt_state = prompt_optimizer.optimize(
+            metrics=summary,
+            current_profiles=llm_client.get_prompt_profiles(),
+        )
+        if prompt_opt_state.get("applied"):
+            llm_client.set_prompt_overrides(prompt_opt_state.get("profiles", {}))
+        result["prompt_optimization"] = prompt_opt_state
     dashboard = GodViewBuilder(config.get("visualization", {})).build(
         last_result=result,
         last_assessment=assessment,

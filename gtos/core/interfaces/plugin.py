@@ -21,5 +21,8 @@ class PluginLifecycle(ABC):
     def on_error(self, error_info: Any) -> Any:
         return error_info
 
+    def on_event(self, event_name: str, payload: dict[str, Any]) -> None:
+        return None
+
     def on_shutdown(self) -> None:
         return None

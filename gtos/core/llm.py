@@ -4,7 +4,7 @@
 import json
 import os
 from dataclasses import dataclass
-from typing import Callable
+from typing import Any, Callable
 from urllib import request
 
 GenerateFn = Callable[[str], str]
@@ -65,9 +65,26 @@ class OpenAICompatibleSettings:
 
 
 class OpenAICompatibleLLM:
-    def __init__(self, settings: OpenAICompatibleSettings) -> None:
+    _DEFAULT_PROMPTS = {
+        "generate_code": "You generate runnable Python code only. Return only Python code without markdown fences.",
+        "fix_code": "You repair Python code tasks based on runtime errors. Return only corrected runnable Python code.",
+        "refine_task": "Rewrite task descriptions for code generation: concise, specific, testable.",
+        "react_step": (
+            "You are an execution agent. Return ONLY one JSON action object.\n"
+            'Allowed action types: code_exec, finish.\n'
+            'For code_exec use: {"type":"code_exec","language":"python","content":"<task prompt or code intent>"}\n'
+            'For finish use: {"type":"finish","result":{"success":true|false,"error":"..."}}\n'
+            "Do not use markdown."
+        ),
+        "reflect_execution": "Return ONLY a JSON object with keys: task_type, failure_pattern, improved_prompt, skill_template.",
+    }
+
+    def __init__(self, settings: OpenAICompatibleSettings, prompt_profiles: dict[str, str] | None = None) -> None:
         self._settings = settings
         self._encoding = self._build_encoding(settings.tokenizer_model)
+        self._prompt_profiles: dict[str, str] = dict(self._DEFAULT_PROMPTS)
+        if isinstance(prompt_profiles, dict):
+            self.set_prompt_overrides(prompt_profiles)
 
     def _build_encoding(self, tokenizer_model: str):
         try:
@@ -134,18 +151,12 @@ class OpenAICompatibleLLM:
             raise RuntimeError(f"Unexpected LLM response: {payload}") from e
 
     def generate_code(self, task_prompt: str) -> str:
-        system_prompt = (
-            "You generate runnable Python code only. "
-            "Return only Python code without markdown fences."
-        )
+        system_prompt = self._prompt_profiles["generate_code"]
         content = self._chat(system_prompt=system_prompt, user_prompt=task_prompt)
         return _extract_python_code(content)
 
     def fix_code(self, task_prompt: str, error_info: str) -> str:
-        system_prompt = (
-            "You repair Python code tasks based on runtime errors. "
-            "Return only corrected runnable Python code."
-        )
+        system_prompt = self._prompt_profiles["fix_code"]
         user_prompt = (
             f"Task:\n{task_prompt}\n\n"
             f"Runtime error:\n{error_info[:4000]}\n\n"
@@ -155,9 +166,42 @@ class OpenAICompatibleLLM:
         return _extract_python_code(content)
 
     def refine_task(self, task_prompt: str) -> str:
-        system_prompt = "Rewrite task descriptions for code generation: concise, specific, testable."
+        system_prompt = self._prompt_profiles["refine_task"]
         refined = self._chat(system_prompt=system_prompt, user_prompt=task_prompt)
         return refined or task_prompt
+
+    def react_step(self, task_prompt: str, history: list[dict[str, Any]] | None = None) -> str:
+        system_prompt = self._prompt_profiles["react_step"]
+        history_text = json.dumps(history[-6:] if history else [], ensure_ascii=False)
+        user_prompt = f"Task:\n{task_prompt}\n\nHistory:\n{history_text}\n\nReturn one next action JSON."
+        return self._chat(system_prompt=system_prompt, user_prompt=user_prompt)
+
+    def reflect_execution(self, task_prompt: str, result: dict[str, Any], trace: list[dict[str, Any]] | None = None) -> str:
+        system_prompt = self._prompt_profiles["reflect_execution"]
+        compact = {
+            "success": bool(result.get("success")),
+            "error": str(result.get("error") or (result.get("_error", {}) or {}).get("message") or ""),
+            "fix_rounds": int(result.get("fix_rounds", 0) or 0),
+            "stdout": str(result.get("stdout", "") or "")[:800],
+            "stderr": str(result.get("stderr", "") or "")[:800],
+        }
+        user_prompt = (
+            f"Task:\n{task_prompt}\n\n"
+            f"Result:\n{json.dumps(compact, ensure_ascii=False)}\n\n"
+            f"Trace:\n{json.dumps((trace or [])[-5:], ensure_ascii=False)}\n\n"
+            "Summarize reflection JSON."
+        )
+        return self._chat(system_prompt=system_prompt, user_prompt=user_prompt)
+
+    def set_prompt_overrides(self, profiles: dict[str, str] | None = None) -> None:
+        if not isinstance(profiles, dict):
+            return
+        for k, v in profiles.items():
+            if k in self._DEFAULT_PROMPTS and isinstance(v, str) and v.strip():
+                self._prompt_profiles[k] = v.strip()
+
+    def get_prompt_profiles(self) -> dict[str, str]:
+        return dict(self._prompt_profiles)
 
 
 class LLMClient:
@@ -169,18 +213,32 @@ class LLMClient:
         generate: GenerateFn | None = None,
         fix: FixFn | None = None,
         refine: Callable[[str], str] | None = None,
+        react: Callable[[str, list[dict[str, Any]]], str] | None = None,
+        reflect: Callable[[str, dict[str, Any], list[dict[str, Any]]], str] | None = None,
     ) -> None:
-        if generate or fix or refine:
+        cfg = config or {}
+        self._prompt_profiles: dict[str, str] = {}
+        if generate or fix or refine or react or reflect:
             if not generate or not fix:
                 raise RuntimeError("Custom LLM injection requires both generate and fix functions.")
             self.generate = generate
             self.fix = fix
             self._refine = refine
+            self._react = react
+            self._reflect = reflect
+            self._prompt_profiles = dict((cfg.get("prompt_profiles") or {})) if isinstance(cfg, dict) else {}
             return
-        backend = OpenAICompatibleLLM(OpenAICompatibleSettings.from_config(config))
+        backend = OpenAICompatibleLLM(
+            OpenAICompatibleSettings.from_config(cfg),
+            prompt_profiles=(cfg.get("prompt_profiles") if isinstance(cfg.get("prompt_profiles"), dict) else None),
+        )
+        self._backend = backend
         self.generate = backend.generate_code
         self.fix = backend.fix_code
         self._refine = backend.refine_task
+        self._react = backend.react_step
+        self._reflect = backend.reflect_execution
+        self._prompt_profiles = backend.get_prompt_profiles()
 
     def generate_code(self, task_prompt: str) -> str:
         return self.generate(task_prompt)
@@ -192,3 +250,31 @@ class LLMClient:
         if self._refine:
             return self._refine(task_prompt)
         return task_prompt
+
+    def react_step(self, task_prompt: str, history: list[dict[str, Any]] | None = None) -> str:
+        if self._react:
+            return self._react(task_prompt, history or [])
+        return '{"type":"code_exec","language":"python","content":""}'
+
+    def reflect_execution(self, task_prompt: str, result: dict[str, Any], trace: list[dict[str, Any]] | None = None) -> str:
+        if self._reflect:
+            return self._reflect(task_prompt, result, trace or [])
+        return "{}"
+
+    def set_prompt_overrides(self, profiles: dict[str, str] | None = None) -> None:
+        if not isinstance(profiles, dict):
+            return
+        backend = getattr(self, "_backend", None)
+        if backend is not None and hasattr(backend, "set_prompt_overrides"):
+            backend.set_prompt_overrides(profiles)
+            self._prompt_profiles = backend.get_prompt_profiles()
+            return
+        for k, v in profiles.items():
+            if isinstance(v, str) and v.strip():
+                self._prompt_profiles[k] = v.strip()
+
+    def get_prompt_profiles(self) -> dict[str, str]:
+        backend = getattr(self, "_backend", None)
+        if backend is not None and hasattr(backend, "get_prompt_profiles"):
+            return backend.get_prompt_profiles()
+        return dict(self._prompt_profiles)

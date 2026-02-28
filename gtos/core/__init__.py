@@ -1,5 +1,6 @@
 # gtos/core/__init__.py
 from gtos.core.llm import LLMClient
+from gtos.core.event_bus import EventBus
 from gtos.core.interfaces import (
     ErrorInfo,
     ExecutionResult,
@@ -14,6 +15,7 @@ from gtos.core.interfaces import (
 
 __all__ = [
     "ErrorInfo",
+    "EventBus",
     "ExecutionResult",
     "LLMClient",
     "LogEvent",

@@ -32,6 +32,23 @@ def _default_config() -> dict[str, Any]:
             "node_retry_count": 0,
             "dag_fail_policy": "skip",
         },
+        "runtime": {
+            "react_enabled": True,
+            "max_steps": 6,
+            "reflection_enabled": True,
+            "reflection_file": str(data_dir / "reflections.jsonl"),
+            "multi_agent": {
+                "enabled": False,
+                "mode": "planner_executor_reviewer",
+                "max_rounds": 2,
+                "profiles": {
+                    "planner": {"role": "planner", "temperature": 0.2},
+                    "coder": {"role": "coder", "temperature": 0.2},
+                    "reviewer": {"role": "reviewer", "temperature": 0.1},
+                    "memory": {"role": "memory", "temperature": 0.0},
+                },
+            },
+        },
         "plugins": {
             "enabled": ["logger", "feedback", "skill", "agent", "llm_optimizer"],
             "skill": {
@@ -61,6 +78,16 @@ def _default_config() -> dict[str, Any]:
             "target_success_rate": 0.85,
             "target_avg_fix_rounds": 0.8,
             "target_avg_latency_ms": 8000,
+            "prompt_auto": {
+                "enabled": True,
+                "window": 60,
+                "min_samples": 12,
+                "failure_rate_threshold": 0.35,
+                "avg_fix_rounds_threshold": 1.2,
+                "avg_token_threshold": 2600,
+                "metrics_file": str(data_dir / "prompt_metrics.jsonl"),
+                "state_file": str(data_dir / "prompt_state.json"),
+            },
         },
         "adaptive_engine": {
             "enabled": True,
@@ -127,6 +154,7 @@ def _default_config() -> dict[str, Any]:
             "max_output_tokens": 1200,
             "max_input_tokens": 12000,
             "timeout_seconds": 60,
+            "prompt_profiles": {},
         },
     }
 
@@ -180,12 +208,25 @@ def _resolve_paths(cfg: dict[str, Any], root: Path) -> dict[str, Any]:
         else:
             analytics_resolved[k] = v
     out["analytics"] = analytics_resolved
+    runtime = out.get("runtime", {})
+    runtime_resolved = dict(runtime)
+    rv = runtime_resolved.get("reflection_file")
+    if isinstance(rv, str) and rv and not Path(rv).is_absolute():
+        runtime_resolved["reflection_file"] = str((root / rv).resolve())
+    out["runtime"] = runtime_resolved
     optimization = out.get("optimization", {})
     optimization_resolved = dict(optimization)
     for k in ("runs_file", "output_file"):
         v = optimization_resolved.get(k)
         if isinstance(v, str) and v and not Path(v).is_absolute():
             optimization_resolved[k] = str((root / v).resolve())
+    prompt_auto = optimization_resolved.get("prompt_auto", {})
+    if isinstance(prompt_auto, dict):
+        for k in ("metrics_file", "state_file"):
+            v = prompt_auto.get(k)
+            if isinstance(v, str) and v and not Path(v).is_absolute():
+                prompt_auto[k] = str((root / v).resolve())
+        optimization_resolved["prompt_auto"] = prompt_auto
     out["optimization"] = optimization_resolved
     adaptive = out.get("adaptive_engine", {})
     adaptive_resolved = dict(adaptive)
