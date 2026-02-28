@@ -8,6 +8,8 @@ import uuid
 from pathlib import Path
 from typing import Any
 
+from gtos.core.interfaces.result import extract_error_message
+
 
 def _now_ts() -> float:
     return time.time()
@@ -53,6 +55,7 @@ class RunLogger:
         return run_id
 
     def finish_run(self, run_id: str, result: dict, error_type: str | None = None, level: str | None = None) -> None:
+        structured_error = result.get("_error", {}) if isinstance(result.get("_error", {}), dict) else {}
         event = {
             "event": "run_finish",
             "ts": _now_ts(),
@@ -61,8 +64,8 @@ class RunLogger:
             "fix_rounds": int(result.get("fix_rounds", 0) or 0),
             "latency_ms": float((result.get("_metrics", {}) or {}).get("latency_ms", 0.0)),
             "token_estimate_out": _estimate_tokens(result.get("code", ""), result.get("stdout", ""), result.get("stderr", "")),
-            "error_type": error_type or self._detect_error_type(result),
-            "error": (result.get("error") or result.get("stderr") or "")[:600],
+            "error_type": error_type or structured_error.get("code") or self._detect_error_type(result),
+            "error": extract_error_message(result)[:600],
             "level": level or "node",
         }
         with self._lock:
@@ -82,7 +85,7 @@ class RunLogger:
     def _detect_error_type(self, result: dict) -> str:
         if result.get("success"):
             return ""
-        text = (result.get("error") or result.get("stderr") or "").lower()
+        text = extract_error_message(result).lower()
         if "timeout" in text:
             return "timeout"
         if "syntaxerror" in text:

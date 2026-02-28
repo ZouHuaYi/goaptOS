@@ -3,6 +3,7 @@
 
 import logging
 import time
+from gtos.core.interfaces.result import append_log, normalize_error
 from gtos.executor.plugin_manager import Plugin
 
 logger = logging.getLogger("gtos")
@@ -21,9 +22,17 @@ class LoggerPlugin(Plugin):
         duration = (time.perf_counter() - self._start_time) * 1000 if self._start_time is not None else 0
         logger.info("post_execute: success=%s duration_ms=%.0f", result.get("success"), duration)
         out = dict(result)
-        out.setdefault("_log", {})["duration_ms"] = round(duration, 2)
+        out = append_log(
+            out,
+            level="info",
+            event="plugin.logger.post_execute",
+            message="logger plugin observed execution result",
+            duration_ms=round(duration, 2),
+            success=bool(result.get("success")),
+        )
         return out
 
-    def on_error(self, error_info: str) -> str:
-        logger.warning("on_error: %s", error_info[:300])
-        return error_info
+    def on_error(self, error_info: object) -> object:
+        normalized = normalize_error(error_info, default_code="plugin_error", retriable=False)
+        logger.warning("on_error: %s", str(normalized.get("message", ""))[:300])
+        return normalized

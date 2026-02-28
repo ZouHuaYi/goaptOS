@@ -36,12 +36,13 @@ class SkillMatcher:
             task = c.get("task") or ""
             source = c.get("source") or "unknown"
             success = bool(c.get("success", True))
+            lifecycle_score = float(c.get("skill_score", 0.5) or 0.5)
             candidate_words = self._words(text)
             overlap = self._overlap(query_words, candidate_words)
             specific_overlap = self._overlap(query_specific, self._specific_words(text))
             quality = self._quality_score(task=task or text, code=(c.get("code") or text), success=success)
             source_bias = 0.06 if source == "vector" else 0.03
-            score = overlap * 0.45 + specific_overlap * 0.35 + quality * 0.14 + source_bias
+            score = overlap * 0.4 + specific_overlap * 0.3 + quality * 0.14 + lifecycle_score * 0.1 + source_bias
             if specific_overlap <= 0 and overlap < 0.25:
                 score *= 0.35
             key = self._dedupe_key(task or text)
@@ -116,6 +117,8 @@ class SkillMatcher:
         for s in items:
             task = (s.get("task") or "").strip()
             code = (s.get("code") or "").strip()
+            if bool(s.get("expired", False)):
+                continue
             if not task and not code:
                 continue
             text = (task + "\n" + code[:400]).strip()
@@ -131,6 +134,7 @@ class SkillMatcher:
                     "error": (s.get("error") or "")[:400],
                     "source": "store",
                     "score": overlap,
+                    "skill_score": float(s.get("score", 0.5) or 0.5),
                 }
             )
         scored.sort(key=lambda x: -float(x.get("score", 0.0)))

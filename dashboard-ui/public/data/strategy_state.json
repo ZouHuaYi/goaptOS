@@ -3,19 +3,24 @@
   "mode": "suggest",
   "applied": false,
   "metrics_window": {
-    "window": 23,
-    "success": 23,
-    "failed": 0,
-    "success_rate": 1.0,
-    "avg_latency_ms": 5722.18,
+    "window": 50,
+    "success": 49,
+    "failed": 1,
+    "success_rate": 0.98,
+    "avg_latency_ms": 12978.88,
     "avg_fix_rounds": 0.0,
-    "top_errors": [],
+    "top_errors": [
+      {
+        "error_type": "unknown",
+        "count": 1
+      }
+    ],
     "level": "task"
   },
   "proposed": {
     "executor": {
       "dag_parallel": false,
-      "dag_max_workers": 4,
+      "dag_max_workers": 1,
       "node_retry_count": 1,
       "dag_fail_policy": "skip"
     },

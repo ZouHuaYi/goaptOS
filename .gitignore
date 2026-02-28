@@ -24,6 +24,8 @@ pip-wheel-metadata/
 .coverage.*
 htmlcov/
 node_modules/
+test/
+data/
 
 # IDE/editor
 .vscode/

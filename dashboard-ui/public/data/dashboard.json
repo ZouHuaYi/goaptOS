@@ -1,45 +1,347 @@
 {
-  "generated_ts": 1772207518.010203,
+  "generated_ts": 1772245976.2004452,
   "window": 100,
   "summary": {
-    "window": 24,
-    "success": 24,
-    "failed": 0,
-    "success_rate": 1.0,
-    "avg_latency_ms": 5611.27,
+    "window": 51,
+    "success": 50,
+    "failed": 1,
+    "success_rate": 0.9803921568627451,
+    "avg_latency_ms": 12829.36,
     "avg_fix_rounds": 0.0,
-    "top_errors": [],
+    "top_errors": [
+      {
+        "error_type": "unknown",
+        "count": 1
+      }
+    ],
     "level": "task"
   },
   "ab_metrics": {
     "treatment": {
-      "runs": 12,
-      "success": 12,
-      "first_pass_success": 10,
+      "runs": 22,
+      "success": 22,
+      "first_pass_success": 19,
       "success_rate": 1.0,
-      "first_pass_rate": 0.8333
+      "first_pass_rate": 0.8636
     },
-    "updated_ts": 1772207517.999619,
+    "updated_ts": 1772245976.1871502,
     "control": {
-      "runs": 11,
-      "success": 11,
-      "first_pass_success": 11,
-      "success_rate": 1.0,
-      "first_pass_rate": 1.0
+      "runs": 28,
+      "success": 27,
+      "first_pass_success": 25,
+      "success_rate": 0.9643,
+      "first_pass_rate": 0.8929
     }
+  },
+  "skill_lifecycle": {
+    "total": 59,
+    "active": 59,
+    "expired": 0,
+    "avg_score": 0.5275,
+    "score_buckets": {
+      "0-0.3": 0,
+      "0.3-0.6": 55,
+      "0.6-0.8": 0,
+      "0.8-1.0": 4
+    },
+    "version_distribution": [
+      {
+        "task_key": "用 python 计算 1+2 并打印结果",
+        "max_version": 5
+      },
+      {
+        "task_key": "写 python 脚本计算 11+22 并打印",
+        "max_version": 1
+      },
+      {
+        "task_key": "你是什么模型？",
+        "max_version": 1
+      },
+      {
+        "task_key": "先用 python 打印 a",
+        "max_version": 1
+      },
+      {
+        "task_key": "然后打印 b",
+        "max_version": 1
+      },
+      {
+        "task_key": "请帮我 delete production 数据",
+        "max_version": 1
+      },
+      {
+        "task_key": "先用 python 输出 x",
+        "max_version": 1
+      },
+      {
+        "task_key": "然后输出 y",
+        "max_version": 1
+      },
+      {
+        "task_key": "请 delete production 数据",
+        "max_version": 1
+      },
+      {
+        "task_key": "然后输出 done",
+        "max_version": 1
+      },
+      {
+        "task_key": "先输出 hello",
+        "max_version": 1
+      },
+      {
+        "task_key": "再输出 world",
+        "max_version": 1
+      },
+      {
+        "task_key": "用 python 输出 1+1",
+        "max_version": 1
+      },
+      {
+        "task_key": "用 python 输出 10+20",
+        "max_version": 1
+      },
+      {
+        "task_key": "用 python 输出 12+8",
+        "max_version": 1
+      },
+      {
+        "task_key": "用 python 输出 50-8",
+        "max_version": 1
+      },
+      {
+        "task_key": "用 python 输出 6*7",
+        "max_version": 1
+      },
+      {
+        "task_key": "用 python 输出 3*3",
+        "max_version": 1
+      },
+      {
+        "task_key": "用 python 输出 4+6",
+        "max_version": 1
+      },
+      {
+        "task_key": "你自己具备什么能力",
+        "max_version": 1
+      }
+    ],
+    "recent_score_trend": [
+      {
+        "ts": 1772245537.4038603,
+        "score": 0.5
+      },
+      {
+        "ts": 1772245537.4038603,
+        "score": 0.5
+      },
+      {
+        "ts": 1772245537.4038603,
+        "score": 0.5
+      },
+      {
+        "ts": 1772245537.4038603,
+        "score": 0.5
+      },
+      {
+        "ts": 1772245537.4038603,
+        "score": 0.5
+      },
+      {
+        "ts": 1772245537.4038603,
+        "score": 0.5
+      },
+      {
+        "ts": 1772245537.4038603,
+        "score": 0.5
+      },
+      {
+        "ts": 1772245537.4038603,
+        "score": 0.5
+      },
+      {
+        "ts": 1772245537.4038603,
+        "score": 0.5
+      },
+      {
+        "ts": 1772245537.4038603,
+        "score": 0.5
+      },
+      {
+        "ts": 1772245537.4038603,
+        "score": 0.5
+      },
+      {
+        "ts": 1772245537.4038603,
+        "score": 0.5
+      },
+      {
+        "ts": 1772245537.4038603,
+        "score": 0.5
+      },
+      {
+        "ts": 1772245537.4038603,
+        "score": 0.5
+      },
+      {
+        "ts": 1772245537.4038603,
+        "score": 0.5
+      },
+      {
+        "ts": 1772245537.4038603,
+        "score": 0.5
+      },
+      {
+        "ts": 1772245537.4038603,
+        "score": 0.5
+      },
+      {
+        "ts": 1772245537.4038603,
+        "score": 0.5
+      },
+      {
+        "ts": 1772245537.4038603,
+        "score": 0.5
+      },
+      {
+        "ts": 1772245537.4038603,
+        "score": 0.5
+      },
+      {
+        "ts": 1772245537.4038603,
+        "score": 0.5
+      },
+      {
+        "ts": 1772245537.4038603,
+        "score": 0.5
+      },
+      {
+        "ts": 1772245537.4038603,
+        "score": 0.5
+      },
+      {
+        "ts": 1772245537.4038603,
+        "score": 0.5
+      },
+      {
+        "ts": 1772245537.4038603,
+        "score": 0.5
+      },
+      {
+        "ts": 1772245537.4038603,
+        "score": 0.5
+      },
+      {
+        "ts": 1772245540.086001,
+        "score": 0.905
+      },
+      {
+        "ts": 1772245760.446691,
+        "score": 0.905
+      },
+      {
+        "ts": 1772245959.836798,
+        "score": 0.905
+      },
+      {
+        "ts": 1772245976.182995,
+        "score": 0.905
+      }
+    ],
+    "top_skills": [
+      {
+        "skill_id": "c898b8128661fc43",
+        "task": "用 Python 计算 1+2 并打印结果",
+        "score": 0.905,
+        "version": 2,
+        "status": "active"
+      },
+      {
+        "skill_id": "c898b8128661fc43",
+        "task": "用 Python 计算 1+2 并打印结果",
+        "score": 0.905,
+        "version": 3,
+        "status": "active"
+      },
+      {
+        "skill_id": "c898b8128661fc43",
+        "task": "用 Python 计算 1+2 并打印结果",
+        "score": 0.905,
+        "version": 4,
+        "status": "active"
+      },
+      {
+        "skill_id": "c898b8128661fc43",
+        "task": "用 Python 计算 1+2 并打印结果",
+        "score": 0.905,
+        "version": 5,
+        "status": "active"
+      },
+      {
+        "skill_id": "a648c94694faaac0",
+        "task": "写 Python 脚本计算 11+22 并打印",
+        "score": 0.5,
+        "version": 1,
+        "status": "active"
+      },
+      {
+        "skill_id": "61946507efc232dd",
+        "task": "你是什么模型？",
+        "score": 0.5,
+        "version": 1,
+        "status": "active"
+      },
+      {
+        "skill_id": "cccfdf004f3daa36",
+        "task": "先用 Python 打印 A",
+        "score": 0.5,
+        "version": 1,
+        "status": "active"
+      },
+      {
+        "skill_id": "0da6e481bd9d39e9",
+        "task": "然后打印 B",
+        "score": 0.5,
+        "version": 1,
+        "status": "active"
+      },
+      {
+        "skill_id": "17b55a6060ac23cd",
+        "task": "请帮我 delete production 数据",
+        "score": 0.5,
+        "version": 1,
+        "status": "active"
+      },
+      {
+        "skill_id": "670ee635bcabdd8a",
+        "task": "先用 Python 输出 X",
+        "score": 0.5,
+        "version": 1,
+        "status": "active"
+      }
+    ]
+  },
+  "skill_drafts": {
+    "total": 0,
+    "proposed": 0,
+    "accepted": 0,
+    "rejected": 0,
+    "acceptance_rate": 0.0,
+    "avg_score_uplift": 0.0,
+    "recent": []
   },
   "last_assessment": {
     "risk_level": "low",
-    "capability_score": 0.75,
+    "capability_score": 0.74,
     "task_type": "python_code",
     "matched_blocked": [],
     "matched_risky": [],
     "dynamic": {
       "enabled": true,
       "risk_boost": "low",
-      "samples": 48,
-      "fail_rate": 0.0,
-      "avg_fix_rounds": 0.021
+      "samples": 90,
+      "fail_rate": 0.022,
+      "avg_fix_rounds": 0.022
     },
     "mode": "advise"
   },
@@ -51,11 +353,14 @@
   },
   "last_result": {
     "success": true,
+    "execution_state": "SUCCESS",
+    "checkpoint_file": "data\\checkpoints\\dag-1772245970844.json",
     "summary": {
       "total": 1,
       "success": 1,
       "failed": 0,
-      "skipped": 0
+      "skipped": 0,
+      "retried_nodes": 0
     },
     "node_results": [
       {
@@ -63,7 +368,7 @@
         "success": true,
         "skipped": false,
         "attempts": 1,
-        "latency_ms": 3051.83
+        "latency_ms": 5334.59
       }
     ]
   }

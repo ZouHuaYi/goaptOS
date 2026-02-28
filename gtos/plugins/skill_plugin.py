@@ -7,6 +7,7 @@ import threading
 import time
 from pathlib import Path
 
+from gtos.core.interfaces.result import append_log, normalize_error
 from gtos.executor.plugin_manager import Plugin
 from gtos.executor.skill_store import SkillStore
 from gtos.memory.skill_matcher import SkillMatcher
@@ -46,6 +47,23 @@ class SkillPlugin(Plugin):
     def pre_execute(self, task_prompt: str) -> str:
         bucket = self._pick_bucket(task_prompt)
         self._local.ab_bucket = bucket
+        self._local.applied_draft_id = ""
+
+        # If there is a proposed optimization draft for this task, attach its prompt template.
+        draft = self._store.get_proposed_draft_for_task(task_prompt) if hasattr(self._store, "get_proposed_draft_for_task") else None
+        if draft:
+            draft_prompt = str(((draft.get("proposal", {}) or {}).get("prompt_template", "") or "")).strip()
+            if draft_prompt:
+                self._local.applied_draft_id = str(draft.get("draft_id", ""))
+                task_prompt = "\n".join(
+                    [
+                        "[Skill optimization draft]",
+                        draft_prompt,
+                        "",
+                        "[Current task]",
+                        task_prompt,
+                    ]
+                )
 
         if bucket in {"control", "off"}:
             return task_prompt
@@ -66,19 +84,58 @@ class SkillPlugin(Plugin):
         return self._matcher.build_context(task_prompt, hits) if hits else task_prompt
 
     def post_execute(self, result: dict) -> dict:
+        out = dict(result)
         bucket = getattr(self._local, "ab_bucket", "unknown")
-        self._update_ab_metrics(bucket=bucket, result=result)
+        self._update_ab_metrics(bucket=bucket, result=out)
 
-        if result.get("success") and self._vector_store:
-            task = result.get("task") or result.get("_task") or ""
-            code = result.get("code") or ""
+        if out.get("success") and self._vector_store:
+            task = out.get("task") or out.get("_task") or ""
+            code = out.get("code") or ""
             if task or code:
                 text = (task + "\n" + code[:500]).strip()
                 self._vector_store.add(text, metadata={"task": task[:500], "code_len": len(code)})
-        return result
+        out = append_log(
+            out,
+            level="info",
+            event="plugin.skill.post_execute",
+            message="skill plugin updated retrieval/ab-test artifacts",
+            ab_bucket=bucket,
+        )
+        applied_draft_id = str(getattr(self._local, "applied_draft_id", "") or "")
+        if applied_draft_id and hasattr(self._store, "record_draft_outcome"):
+            outcome = self._store.record_draft_outcome(str(out.get("task", "") or ""), out, draft_id=applied_draft_id)
+            if outcome:
+                out = append_log(
+                    out,
+                    level="info",
+                    event="plugin.skill.draft_outcome",
+                    message="draft outcome recorded",
+                    draft_id=applied_draft_id,
+                    status=str(outcome.get("status", "")),
+                )
+                out.setdefault("_skill_optimization", {})["applied_draft"] = {
+                    "draft_id": applied_draft_id,
+                    "status": str(outcome.get("status", "")),
+                }
+        try:
+            draft = self._store.auto_optimize_from_result(out) if hasattr(self._store, "auto_optimize_from_result") else None
+            if draft:
+                out = append_log(
+                    out,
+                    level="warn",
+                    event="plugin.skill.auto_optimize",
+                    message="auto optimization draft proposed for low-performing skill",
+                    draft_id=str(draft.get("draft_id", "")),
+                    from_skill_id=str(draft.get("from_skill_id", "")),
+                    target_version=int(draft.get("target_version", 0) or 0),
+                )
+                out.setdefault("_skill_optimization", {})["draft"] = draft
+        except Exception as e:
+            out = append_log(out, level="error", event="plugin.skill.auto_optimize_failed", message=str(e)[:240])
+        return out
 
-    def on_error(self, error_info: str) -> str:
-        return error_info
+    def on_error(self, error_info: object) -> object:
+        return normalize_error(error_info, default_code="skill_error", retriable=False)
 
     def _pick_bucket(self, task_prompt: str) -> str:
         mode = self._ab_mode

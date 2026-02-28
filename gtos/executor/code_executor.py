@@ -7,6 +7,8 @@ import tempfile
 from pathlib import Path
 from typing import Any
 
+from gtos.core.interfaces.result import ErrorInfo, append_log
+
 # 避免循环导入：在运行时从包根取 core
 def _get_llm():
     from gtos.config import load_config
@@ -39,11 +41,17 @@ class CodeExecutor:
         """执行闭环：生成代码 → 执行 → 失败则用 LLM 修复并重试。"""
         canonical_task = (original_task or task_prompt).strip()
         code = self.llm.generate_code(task_prompt)
+        attempt_errors: list[dict[str, Any]] = []
         for round in range(self.max_fix_rounds + 1):
             ok, stdout, stderr = self._run_code(code)
             if ok:
-                self.skill_store.add(canonical_task, code, success=True)
-                return {
+                self.skill_store.add(
+                    canonical_task,
+                    code,
+                    success=True,
+                    metadata={"fix_rounds": round, "error": "", "source": "code_executor"},
+                )
+                out = {
                     "success": True,
                     "task": canonical_task,
                     "_task_prompt": task_prompt,
@@ -51,11 +59,27 @@ class CodeExecutor:
                     "stdout": stdout,
                     "stderr": stderr,
                     "fix_rounds": round,
+                    "_execution": {"attempts": round + 1, "had_retry": round > 0, "attempt_errors": attempt_errors},
                 }
+                out = append_log(
+                    out,
+                    "info",
+                    "executor.code.success",
+                    "code execution completed",
+                    attempts=round + 1,
+                    had_retry=round > 0,
+                )
+                return out
             error_info = stderr or stdout or "unknown error"
+            attempt_errors.append(ErrorInfo(code="exec_failed", message=error_info, retriable=True, details={"round": round}).to_dict())
             if round == self.max_fix_rounds:
-                self.skill_store.add(canonical_task, code, success=False)
-                return {
+                self.skill_store.add(
+                    canonical_task,
+                    code,
+                    success=False,
+                    metadata={"fix_rounds": round, "error": error_info, "source": "code_executor"},
+                )
+                out = {
                     "success": False,
                     "task": canonical_task,
                     "_task_prompt": task_prompt,
@@ -63,16 +87,31 @@ class CodeExecutor:
                     "stdout": stdout,
                     "stderr": stderr,
                     "error": error_info,
+                    "_error": ErrorInfo(code="max_fix_rounds_exceeded", message=error_info, retriable=False, details={"round": round}).to_dict(),
                     "fix_rounds": round,
+                    "_execution": {"attempts": round + 1, "had_retry": round > 0, "attempt_errors": attempt_errors},
                 }
-            code = self.llm.fix_code(task_prompt, error_info)
-        return {
+                out = append_log(
+                    out,
+                    "error",
+                    "executor.code.failed",
+                    "code execution failed after retries",
+                    attempts=round + 1,
+                )
+                return out
+            next_code = self.llm.fix_code(task_prompt, error_info)
+            code = next_code
+        out = {
             "success": False,
             "task": canonical_task,
             "_task_prompt": task_prompt,
             "error": "max fix rounds exceeded",
+            "_error": ErrorInfo(code="max_fix_rounds_exceeded", message="max fix rounds exceeded", retriable=False).to_dict(),
             "fix_rounds": self.max_fix_rounds,
+            "_execution": {"attempts": self.max_fix_rounds + 1, "had_retry": self.max_fix_rounds > 0, "attempt_errors": attempt_errors},
         }
+        out = append_log(out, "error", "executor.code.failed", "max fix rounds exceeded", attempts=self.max_fix_rounds + 1)
+        return out
 
     def _run_code(self, code: str) -> tuple[bool, str, str]:
         """在临时文件中执行 code，返回 (成功, stdout, stderr)。"""

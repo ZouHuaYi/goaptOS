@@ -5,7 +5,9 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 import time
 from typing import Any
 
+from gtos.core.interfaces.result import append_log, normalize_error
 from gtos.executor.planner import topo_order
+from gtos.executor.transaction import TaskTransactionManager
 
 
 def _node_prompt(node: dict[str, Any]) -> str:
@@ -23,24 +25,48 @@ def _node_prompt(node: dict[str, Any]) -> str:
     return "\n".join(lines)
 
 
-def _execute_node(node: dict[str, Any], code_executor: Any, plugin_manager: Any, node_retry_count: int) -> dict[str, Any]:
+def _execute_node(
+    node: dict[str, Any],
+    code_executor: Any,
+    plugin_manager: Any,
+    node_retry_count: int,
+    tx_manager: TaskTransactionManager,
+) -> dict[str, Any]:
     prompt = plugin_manager.apply_pre_execute(_node_prompt(node))
     attempts = 0
     started = time.perf_counter()
     last: dict[str, Any] = {}
+    checkpoint_id = tx_manager.create_checkpoint(
+        task_id=str(node["id"]),
+        payload={"prompt": node.get("prompt", ""), "deps": node.get("deps", [])},
+    )
 
     while attempts <= max(0, node_retry_count):
         attempts += 1
         try:
             r = code_executor.execute_task(prompt, original_task=node.get("prompt", ""))
         except Exception as e:
-            plugin_manager.apply_on_error(str(e))
-            r = {"success": False, "id": node["id"], "error": str(e)}
+            normalized = plugin_manager.apply_on_error(str(e))
+            err = normalize_error(normalized, default_code="node_execution_exception", retriable=True)
+            r = {"success": False, "id": node["id"], "error": err.get("message", str(e)), "_error": err}
         last = r
+        tx_manager.record_attempt(
+            task_id=str(node["id"]),
+            attempt=attempts,
+            success=bool(r.get("success")),
+            error=str(r.get("error", "")),
+        )
         if r.get("success"):
             break
+        tx_manager.rollback(task_id=str(node["id"]), reason="attempt_failed")
 
     latency_ms = (time.perf_counter() - started) * 1000
+    tx_manager.finish_task(
+        task_id=str(node["id"]),
+        success=bool(last.get("success")),
+        meta={"attempts": attempts, "latency_ms": round(latency_ms, 2)},
+    )
+    tx_meta = tx_manager.get_task(str(node["id"]))
     out = plugin_manager.apply_post_execute(
         {
             **last,
@@ -48,7 +74,22 @@ def _execute_node(node: dict[str, Any], code_executor: Any, plugin_manager: Any,
             "deps": node.get("deps", []),
             "attempts": attempts,
             "_metrics": {**(last.get("_metrics", {}) if isinstance(last, dict) else {}), "node_latency_ms": round(latency_ms, 2)},
+            "_transaction": {
+                "run_id": tx_manager.run_id,
+                "checkpoint_id": checkpoint_id,
+                "rolled_back": bool(tx_meta.get("rolled_back")),
+                "attempts": tx_meta.get("attempts", []),
+            },
         }
+    )
+    out = append_log(
+        out,
+        level="info",
+        event="executor.dag.node_finished",
+        message="dag node finished",
+        node_id=str(node["id"]),
+        success=bool(out.get("success")),
+        attempts=attempts,
     )
     out.setdefault("_node", {})["attempts"] = attempts
     out["_node"]["latency_ms"] = round(latency_ms, 2)
@@ -97,6 +138,8 @@ def run_dag_report(
         }
 
     fail_policy = fail_policy if fail_policy in {"stop", "skip", "continue"} else "skip"
+    run_id = f"dag-{int(time.time() * 1000)}"
+    tx_manager = TaskTransactionManager(run_id=run_id)
     id_to_result: dict[str, dict] = {}
     timeline: list[dict[str, Any]] = []
 
@@ -116,7 +159,7 @@ def run_dag_report(
                 timeline.append({"id": node["id"], "status": "skipped"})
                 continue
 
-            r = _execute_node(node, code_executor, plugin_manager, node_retry_count=node_retry_count)
+            r = _execute_node(node, code_executor, plugin_manager, node_retry_count=node_retry_count, tx_manager=tx_manager)
             id_to_result[node["id"]] = r
             timeline.append({"id": node["id"], "status": "success" if r.get("success") else "failed"})
 
@@ -133,7 +176,11 @@ def run_dag_report(
                         }
                 break
 
-        return _build_report(ordered, id_to_result, timeline)
+        report = _build_report(ordered, id_to_result, timeline)
+        retried_nodes = sum(1 for r in report.get("results", []) if int(r.get("attempts", 1) or 1) > 1)
+        report.setdefault("summary", {})["retried_nodes"] = retried_nodes
+        report["checkpoint_file"] = tx_manager.path
+        return report
 
     completed = set()
 
@@ -162,7 +209,7 @@ def run_dag_report(
                     timeline.append({"id": node["id"], "status": "skipped"})
                     continue
 
-                fut = pool.submit(_execute_node, node, code_executor, plugin_manager, node_retry_count)
+                fut = pool.submit(_execute_node, node, code_executor, plugin_manager, node_retry_count, tx_manager)
                 futures[fut] = node["id"]
 
             for fut in as_completed(futures):
@@ -170,10 +217,12 @@ def run_dag_report(
                 try:
                     id_to_result[nid] = fut.result()
                 except Exception as e:
+                    err = normalize_error(str(e), default_code="dag_future_exception", retriable=False)
                     id_to_result[nid] = {
                         "success": False,
                         "id": nid,
-                        "error": str(e),
+                        "error": err["message"],
+                        "_error": err,
                         "_node": {"attempts": 1, "latency_ms": 0.0},
                     }
                 completed.add(nid)
@@ -193,7 +242,11 @@ def run_dag_report(
                     completed = set(n["id"] for n in ordered)
                     break
 
-    return _build_report(ordered, id_to_result, timeline)
+    report = _build_report(ordered, id_to_result, timeline)
+    retried_nodes = sum(1 for r in report.get("results", []) if int(r.get("attempts", 1) or 1) > 1)
+    report.setdefault("summary", {})["retried_nodes"] = retried_nodes
+    report["checkpoint_file"] = tx_manager.path
+    return report
 
 
 def run_dag(

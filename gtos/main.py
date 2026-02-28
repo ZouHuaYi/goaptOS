@@ -9,8 +9,11 @@ from gtos.analytics import RunLogger
 from gtos.analytics.strategy_optimizer import StrategyOptimizer
 from gtos.cognition import SelfCognition
 from gtos.config import load_config
+from gtos.core.interfaces.result import append_log, normalize_error
 from gtos.core.llm import LLMClient
 from gtos.executor import CodeExecutor, PluginManager, SkillStore, TaskOrchestrator
+from gtos.executor.state_machine import ExecutionState, ExecutionStateMachine
+from gtos.executor.transaction import TaskTransactionManager
 from gtos.memory import get_vector_store
 from gtos.observability import GodViewBuilder
 from gtos.plugins import AgentPlugin, FeedbackPlugin, LLMOptimizerPlugin, LoggerPlugin, SkillPlugin
@@ -123,12 +126,14 @@ def main(config_path: str | None = None, task_override: str | None = None) -> No
 
 
 def execute_once(config_path: str | None = None, task_override: str | None = None) -> dict:
+    state_machine = ExecutionStateMachine()
     config = load_config(config_path)
     _setup_logging(config.get("logging", {}).get("level", "INFO"))
     optimizer_state = StrategyOptimizer(config.get("optimization", {})).optimize(config)
 
     llm_client = LLMClient(config=config.get("llm", {}))
     plugin_manager, vector_store, run_logger = _build_plugins(config, llm_client)
+    plugin_manager.start()
     paths = config.get("paths", {})
     exec_cfg = config.get("executor", {})
 
@@ -157,20 +162,26 @@ def execute_once(config_path: str | None = None, task_override: str | None = Non
             dynamic.get("fail_rate"),
         )
     if decision.get("action") == "reject":
+        state_machine.transition(ExecutionState.ABORTED, reason="self_cognition_reject", meta={"reason": decision.get("reason", "")})
+        reject_error = normalize_error(decision.get("reason") or "self cognition rejected task", default_code="self_cognition_reject", retriable=False)
         run_logger.finish_run(
             root_run_id,
-            {"success": False, "error": decision.get("reason"), "_metrics": {"latency_ms": 0.0}, "fix_rounds": 0},
+            {"success": False, "error": reject_error.get("message"), "_error": reject_error, "_metrics": {"latency_ms": 0.0}, "fix_rounds": 0},
             error_type="rejected",
             level="task",
         )
+        plugin_manager.shutdown()
         return {
             "result": {
                 "success": False,
                 "rejected": True,
-                "reason": decision.get("reason"),
+                "reason": reject_error.get("message"),
+                "_error": reject_error,
                 "risk": assessment.get("risk_level"),
                 "capability_score": assessment.get("capability_score"),
                 "dynamic": assessment.get("dynamic"),
+                "execution_state": state_machine.current.value,
+                "state_history": state_machine.to_dict().get("history", []),
             },
             "assessment": assessment,
             "optimizer_state": optimizer_state,
@@ -181,10 +192,12 @@ def execute_once(config_path: str | None = None, task_override: str | None = Non
     use_planner = exec_cfg.get("use_planner", False)
 
     if use_planner:
+        state_machine.transition(ExecutionState.PLANNING, reason="planner_enabled")
         skill_cfg = config.get("plugins", {}).get("skill", {})
         orchestrator = TaskOrchestrator(vector_store=vector_store, retrieval_top_k=skill_cfg.get("retrieval_top_k", 5))
         policy = orchestrator.derive_execution_policy(exec_cfg, assessment=assessment)
         dag = orchestrator.plan(task_prompt)
+        state_machine.transition(ExecutionState.EXECUTING, reason="dag_execution_start", meta={"nodes": len(dag)})
         try:
             result = orchestrator.execute(
                 dag,
@@ -196,7 +209,9 @@ def execute_once(config_path: str | None = None, task_override: str | None = Non
                 fail_policy=policy["fail_policy"],
             )
         except Exception as e:
-            plugin_manager.apply_on_error(str(e))
+            state_machine.transition(ExecutionState.ABORTED, reason="dag_execution_exception", meta={"error": str(e)})
+            plugin_manager.apply_on_error(normalize_error(str(e), default_code="dag_execution_exception", retriable=False))
+            plugin_manager.shutdown()
             raise
     else:
         policy = {
@@ -205,15 +220,63 @@ def execute_once(config_path: str | None = None, task_override: str | None = Non
             "node_retry_count": int(exec_cfg.get("node_retry_count", 0)),
             "fail_policy": "single_task",
         }
+        tx_manager = TaskTransactionManager(run_id=f"single-{int(time.time() * 1000)}")
+        checkpoint_id = tx_manager.create_checkpoint("single_task", {"prompt": task_prompt})
+        state_machine.transition(ExecutionState.EXECUTING, reason="single_task_execution_start")
         prompt = plugin_manager.apply_pre_execute(task_prompt)
         try:
             result = code_executor.execute_task(prompt, original_task=task_prompt)
         except Exception as e:
-            plugin_manager.apply_on_error(str(e))
+            state_machine.transition(ExecutionState.ABORTED, reason="single_task_exception", meta={"error": str(e)})
+            tx_manager.record_attempt("single_task", 1, False, str(e))
+            tx_manager.rollback("single_task", "execution_exception")
+            tx_manager.finish_task("single_task", False, meta={"checkpoint_id": checkpoint_id})
+            plugin_manager.apply_on_error(normalize_error(str(e), default_code="single_task_exception", retriable=False))
+            plugin_manager.shutdown()
             raise
+        attempts = int(result.get("_execution", {}).get("attempts", 1) or 1)
+        errors = result.get("_execution", {}).get("attempt_errors", [])
+        for i in range(attempts):
+            err_msg = ""
+            if i < len(errors):
+                err_msg = str(errors[i].get("message", ""))
+            tx_manager.record_attempt("single_task", i + 1, bool(result.get("success")) and i == attempts - 1, err_msg)
+        if not result.get("success"):
+            tx_manager.rollback("single_task", "single_task_failed")
+        tx_manager.finish_task(
+            "single_task",
+            bool(result.get("success")),
+            meta={"checkpoint_id": checkpoint_id, "attempts": attempts},
+        )
         result = plugin_manager.apply_post_execute(result)
+        result = append_log(
+            result,
+            level="info",
+            event="executor.single_task.finished",
+            message="single task execution finished",
+            success=bool(result.get("success")),
+            attempts=attempts,
+        )
+        result["_transaction"] = {
+            "run_id": tx_manager.run_id,
+            "checkpoint_file": tx_manager.path,
+            "task": tx_manager.get_task("single_task"),
+        }
 
     cognition.update_capability(result)
+    if result.get("summary", {}).get("retried_nodes", 0) > 0 or result.get("_execution", {}).get("had_retry"):
+        state_machine.transition(ExecutionState.RETRYING, reason="retry_detected")
+    state_machine.transition(ExecutionState.SUCCESS if result.get("success") else ExecutionState.FAILED)
+    result = append_log(
+        result,
+        level="info",
+        event="executor.run.finished",
+        message="run finished with final state",
+        final_state=state_machine.current.value,
+        success=bool(result.get("success")),
+    )
+    result["execution_state"] = state_machine.current.value
+    result["state_history"] = state_machine.to_dict().get("history", [])
     total_latency_ms = round((time.perf_counter() - root_started) * 1000, 2)
     result.setdefault("_metrics", {})["latency_ms"] = total_latency_ms
     run_logger.finish_run(root_run_id, result, level="task")
@@ -222,6 +285,7 @@ def execute_once(config_path: str | None = None, task_override: str | None = Non
         last_assessment=assessment,
         last_policy=(result.get("execution_policy") or policy),
     )
+    plugin_manager.shutdown()
     return {
         "result": result,
         "assessment": assessment,
@@ -229,6 +293,7 @@ def execute_once(config_path: str | None = None, task_override: str | None = Non
         "dashboard_path": config.get("visualization", {}).get("json_file", "data/dashboard.json") if dashboard.get("enabled", True) else "",
         "config": config,
     }
+
 
 
 if __name__ == "__main__":

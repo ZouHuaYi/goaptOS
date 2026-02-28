@@ -2,6 +2,7 @@
 """智能增强插件：pre 阶段可选调用 LLM 优化任务描述；on_error 可选返回修复建议。"""
 
 import logging
+from gtos.core.interfaces.result import normalize_error
 from gtos.executor.plugin_manager import Plugin
 
 logger = logging.getLogger("gtos")
@@ -27,5 +28,5 @@ class LLMOptimizerPlugin(Plugin):
     def post_execute(self, result: dict) -> dict:
         return result
 
-    def on_error(self, error_info: str) -> str:
-        return error_info
+    def on_error(self, error_info: object) -> object:
+        return normalize_error(error_info, default_code="execution_error", retriable=False)

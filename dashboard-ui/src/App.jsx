@@ -139,6 +139,8 @@ export default function App() {
   const summary = dashboard?.summary || {}
   const assess = dashboard?.last_assessment || {}
   const policy = dashboard?.last_policy || {}
+  const skillLifecycle = dashboard?.skill_lifecycle || {}
+  const skillDrafts = dashboard?.skill_drafts || {}
   const proposed = strategy?.proposed?.executor || {}
   const ab = dashboard?.ab_metrics || {}
   const treatment = ab?.treatment || {}
@@ -153,6 +155,16 @@ export default function App() {
     const rows = dashboard?.summary?.top_errors || []
     return rows.map((r, i) => ({ key: i + 1, ...r }))
   }, [dashboard])
+
+  const skillBucketRows = useMemo(() => {
+    const b = skillLifecycle?.score_buckets || {}
+    return Object.keys(b).map((k, i) => ({ key: i + 1, bucket: k, count: b[k] || 0 }))
+  }, [skillLifecycle])
+
+  const recentDraftRows = useMemo(() => {
+    const rows = skillDrafts?.recent || []
+    return rows.map((r, i) => ({ key: i + 1, ...r }))
+  }, [skillDrafts])
 
   function updateSessionById(sessionId, updater) {
     setSessions((prev) => sortSessions(prev.map((s) => (s.id === sessionId ? updater(s) : s))))
@@ -539,6 +551,22 @@ export default function App() {
                               </Col>
                             </Row>
                           </Card>
+
+                          <Card title="技能生命周期">
+                            <Row gutter={12}>
+                              <Col span={12}><Statistic title="总技能" value={skillLifecycle.total || 0} /></Col>
+                              <Col span={12}><Statistic title="平均分" value={skillLifecycle.avg_score || 0} precision={3} /></Col>
+                              <Col span={12}><Statistic title="活跃" value={skillLifecycle.active || 0} /></Col>
+                              <Col span={12}><Statistic title="过期" value={skillLifecycle.expired || 0} /></Col>
+                            </Row>
+                            <Divider style={{ margin: '12px 0' }} />
+                            <Row gutter={12}>
+                              <Col span={12}><Statistic title="草案总数" value={skillDrafts.total || 0} /></Col>
+                              <Col span={12}><Statistic title="待采纳草案" value={skillDrafts.proposed || 0} /></Col>
+                              <Col span={12}><Statistic title="采纳率" value={((skillDrafts.acceptance_rate || 0) * 100).toFixed(2)} suffix="%" /></Col>
+                              <Col span={12}><Statistic title="平均分数提升" value={skillDrafts.avg_score_uplift || 0} precision={4} /></Col>
+                            </Row>
+                          </Card>
                         </Space>
                       </Col>
                       ) : null}
@@ -600,6 +628,33 @@ export default function App() {
                               <Descriptions.Item label="建议重试数">{proposed.node_retry_count ?? '-'}</Descriptions.Item>
                               <Descriptions.Item label="建议失败策略">{proposed.dag_fail_policy ?? '-'}</Descriptions.Item>
                             </Descriptions>
+                          </Card>
+
+                          <Card title="技能分数分布" style={{ marginTop: 16 }}>
+                            <Table
+                              dataSource={skillBucketRows}
+                              rowKey="key"
+                              pagination={false}
+                              columns={[
+                                { title: '分数区间', dataIndex: 'bucket' },
+                                { title: '技能数', dataIndex: 'count', sorter: (a, b) => (a.count || 0) - (b.count || 0) },
+                              ]}
+                            />
+                          </Card>
+
+                          <Card title="最近优化草案" style={{ marginTop: 16 }}>
+                            <Table
+                              dataSource={recentDraftRows}
+                              rowKey="key"
+                              pagination={{ pageSize: 5, showSizeChanger: false }}
+                              columns={[
+                                { title: '草案', dataIndex: 'draft_id', render: (v) => <Text code>{String(v || '').slice(-8)}</Text> },
+                                { title: '来源版本', dataIndex: 'from_version' },
+                                { title: '目标版本', dataIndex: 'target_version' },
+                                { title: '分数提升', dataIndex: ['acceptance', 'score_uplift'], render: (v) => (v === undefined ? '-' : Number(v).toFixed(4)) },
+                                { title: '状态', dataIndex: 'status', render: (v) => <Tag color={v === 'accepted' ? 'green' : v === 'rejected' ? 'red' : 'gold'}>{v || 'proposed'}</Tag> },
+                              ]}
+                            />
                           </Card>
                         </Col>
                       </Row>
