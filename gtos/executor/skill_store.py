@@ -27,8 +27,17 @@ class SkillStore(SkillStoreProtocol):
     def _load(self) -> list[dict[str, Any]]:
         if not self._path.exists():
             return []
-        with open(self._path, "r", encoding="utf-8") as f:
-            raw = json.load(f)
+        try:
+            with open(self._path, "r", encoding="utf-8") as f:
+                raw = json.load(f)
+        except Exception:
+            # Corrupted runtime state should not break the whole executor.
+            try:
+                broken = self._path.with_suffix(self._path.suffix + f".broken-{int(time.time())}")
+                self._path.replace(broken)
+            except Exception:
+                pass
+            return []
         if not isinstance(raw, list):
             return []
         out: list[dict[str, Any]] = []

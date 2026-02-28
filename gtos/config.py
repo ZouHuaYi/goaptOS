@@ -66,6 +66,11 @@ def _default_config() -> dict[str, Any]:
             "enabled": True,
             "stats_file": str(data_dir / "capability_stats.json"),
             "ema_alpha": 0.25,
+            "bandit_file": str(data_dir / "capability_bandit.json"),
+            "exploration_weight": 2.0,
+            "primary_algo": "ucb",
+            "ab_mode": "shadow",
+            "split_ratio": 0.5,
         },
         "self_cognition": {
             "mode": "advise",
@@ -88,6 +93,7 @@ def _default_config() -> dict[str, Any]:
             "runs_file": str(data_dir / "runs.jsonl"),
             "ab_metrics_file": str(data_dir / "skill_ab_metrics.json"),
             "capability_stats_file": str(data_dir / "capability_stats.json"),
+            "capability_bandit_file": str(data_dir / "capability_bandit.json"),
             "json_file": str(data_dir / "dashboard.json"),
             "markdown_file": str(data_dir / "dashboard.md"),
             "window": 100,
@@ -183,9 +189,10 @@ def _resolve_paths(cfg: dict[str, Any], root: Path) -> dict[str, Any]:
     out["optimization"] = optimization_resolved
     adaptive = out.get("adaptive_engine", {})
     adaptive_resolved = dict(adaptive)
-    v = adaptive_resolved.get("stats_file")
-    if isinstance(v, str) and v and not Path(v).is_absolute():
-        adaptive_resolved["stats_file"] = str((root / v).resolve())
+    for k in ("stats_file", "bandit_file"):
+        v = adaptive_resolved.get(k)
+        if isinstance(v, str) and v and not Path(v).is_absolute():
+            adaptive_resolved[k] = str((root / v).resolve())
     out["adaptive_engine"] = adaptive_resolved
     sc = out.get("self_cognition", {})
     if isinstance(sc.get("profile_file"), str) and sc.get("profile_file") and not Path(sc["profile_file"]).is_absolute():
@@ -197,7 +204,7 @@ def _resolve_paths(cfg: dict[str, Any], root: Path) -> dict[str, Any]:
     out["self_cognition"] = sc
     vis = out.get("visualization", {})
     vis_resolved = dict(vis)
-    for k in ("runs_file", "ab_metrics_file", "capability_stats_file", "json_file", "markdown_file"):
+    for k in ("runs_file", "ab_metrics_file", "capability_stats_file", "capability_bandit_file", "json_file", "markdown_file"):
         v = vis_resolved.get(k)
         if isinstance(v, str) and v and not Path(v).is_absolute():
             vis_resolved[k] = str((root / v).resolve())

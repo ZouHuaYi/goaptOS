@@ -5,7 +5,13 @@ import argparse
 import logging
 import time
 from pathlib import Path
-from gtos.adaptive_engine import AdaptiveDecisionEngine, CapabilityRegistry, CapabilityStatsUpdater
+from gtos.adaptive_engine import (
+    AdaptiveDecisionEngine,
+    CapabilityRegistry,
+    CapabilityStatsUpdater,
+    RewardModel,
+    TaskBucketBandit,
+)
 from gtos.analytics import RunLogger
 from gtos.analytics.strategy_optimizer import StrategyOptimizer
 from gtos.cognition import SelfCognition
@@ -152,7 +158,16 @@ def execute_once(config_path: str | None = None, task_override: str | None = Non
     adaptive_cfg = config.get("adaptive_engine", {})
     adaptive_enabled = bool(adaptive_cfg.get("enabled", True))
     capability_stats_file = adaptive_cfg.get("stats_file", "data/capability_stats.json")
+    capability_bandit_file = adaptive_cfg.get("bandit_file", "data/capability_bandit.json")
     registry = CapabilityRegistry(stats_file=capability_stats_file)
+    bandit = TaskBucketBandit(
+        file_path=capability_bandit_file,
+        exploration_weight=float(adaptive_cfg.get("exploration_weight", 2.0)),
+        primary_algo=str(adaptive_cfg.get("primary_algo", "ucb")),
+        ab_mode=str(adaptive_cfg.get("ab_mode", "shadow")),
+        split_ratio=float(adaptive_cfg.get("split_ratio", 0.5)),
+    )
+    reward_model = RewardModel()
     stats_updater = CapabilityStatsUpdater(registry=registry, ema_alpha=float(adaptive_cfg.get("ema_alpha", 0.25)))
 
     analytics_cfg = config.get("analytics", {})
@@ -208,7 +223,7 @@ def execute_once(config_path: str | None = None, task_override: str | None = Non
     plugin_enabled = config.get("plugins", {}).get("enabled", [])
     selected_plugins = list(plugin_enabled)
     if adaptive_enabled:
-        adaptive_engine = AdaptiveDecisionEngine(registry=registry)
+        adaptive_engine = AdaptiveDecisionEngine(registry=registry, bandit=bandit)
         adaptive_decision = adaptive_engine.decide(
             task_prompt=task_prompt,
             assessment=assessment,
@@ -321,6 +336,14 @@ def execute_once(config_path: str | None = None, task_override: str | None = Non
     if adaptive_enabled and adaptive_decision:
         selected_caps = list(dict.fromkeys((adaptive_decision.get("selected_plugins", []) or []) + (["planner"] if use_planner else ["single_task"]) + (["parallel_dag"] if policy.get("parallel") else [])))
         stats_updater.update_from_result(selected_caps, result=result, assessment=assessment)
+        bandit_info = adaptive_decision.get("bandit", {}) if isinstance(adaptive_decision, dict) else {}
+        bucket = str(bandit_info.get("bucket", "") or "")
+        selected_arm = str(bandit_info.get("selected_combo_arm", "") or bandit_info.get("selected_arm", "") or "")
+        selected_algo = str(bandit_info.get("selected_algo", "ucb") or "ucb")
+        if bucket and selected_arm:
+            reward = reward_model.calculate(result)
+            bandit.update(bucket=bucket, arm_name=selected_arm, reward=reward, selected_algo=selected_algo)
+            result.setdefault("adaptive_decision", {}).setdefault("bandit", {})["reward"] = reward
     run_logger.finish_run(root_run_id, result, level="task")
     dashboard = GodViewBuilder(config.get("visualization", {})).build(
         last_result=result,

@@ -1,12 +1,13 @@
 from pathlib import Path
 
-from gtos.adaptive_engine import AdaptiveDecisionEngine, CapabilityRegistry, CapabilityStatsUpdater
+from gtos.adaptive_engine import AdaptiveDecisionEngine, CapabilityRegistry, CapabilityStatsUpdater, TaskBucketBandit
 
 
 def test_adaptive_decision_returns_dynamic_plugin_order(tmp_path: Path) -> None:
     stats_file = tmp_path / "capability_stats.json"
     registry = CapabilityRegistry(stats_file=stats_file)
-    engine = AdaptiveDecisionEngine(registry=registry)
+    bandit = TaskBucketBandit(file_path=tmp_path / "bandit.json")
+    engine = AdaptiveDecisionEngine(registry=registry, bandit=bandit)
     decision = engine.decide(
         task_prompt="请并行处理多个 python 子任务并输出结果",
         assessment={"risk_level": "low"},
@@ -17,6 +18,8 @@ def test_adaptive_decision_returns_dynamic_plugin_order(tmp_path: Path) -> None:
     assert len(decision["selected_plugins"]) >= 2
     assert "execution_overrides" in decision
     assert "task_profile" in decision
+    assert "bandit" in decision
+    assert "|" in str(decision["bandit"].get("selected_combo_arm", ""))
 
 
 def test_stats_updater_updates_registry_ema(tmp_path: Path) -> None:

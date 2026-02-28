@@ -21,6 +21,7 @@ import {
   Badge,
   Button,
   Card,
+  Select,
   Col,
   ConfigProvider,
   Descriptions,
@@ -107,6 +108,27 @@ function renderMessageContent(content) {
   )
 }
 
+function Sparkline({ points = [], color = '#1677ff' }) {
+  if (!points.length) return <Text type="secondary">暂无曲线数据</Text>
+  const width = 220
+  const height = 64
+  const xs = points.map((_, i) => i)
+  const ys = points.map((p) => Number(p?.average_reward || 0))
+  const minY = Math.min(...ys)
+  const maxY = Math.max(...ys)
+  const xScale = (x) => (xs.length <= 1 ? 0 : (x / (xs.length - 1)) * (width - 8) + 4)
+  const yScale = (y) => {
+    if (maxY === minY) return height / 2
+    return height - (((y - minY) / (maxY - minY)) * (height - 12) + 6)
+  }
+  const d = ys.map((y, i) => `${i === 0 ? 'M' : 'L'} ${xScale(i).toFixed(2)} ${yScale(y).toFixed(2)}`).join(' ')
+  return (
+    <svg width={width} height={height} viewBox={`0 0 ${width} ${height}`}>
+      <path d={d} fill="none" stroke={color} strokeWidth="2" />
+    </svg>
+  )
+}
+
 export default function App() {
   const [dashboard, setDashboard] = useState(null)
   const [strategy, setStrategy] = useState(null)
@@ -120,6 +142,7 @@ export default function App() {
   const [activeSessionId, setActiveSessionId] = useState('')
   const [sessionQuery, setSessionQuery] = useState('')
   const [isMobile, setIsMobile] = useState(false)
+  const [banditBucket, setBanditBucket] = useState('')
 
   const abortRef = useRef(null)
   const messageBoxRef = useRef(null)
@@ -142,6 +165,7 @@ export default function App() {
   const skillLifecycle = dashboard?.skill_lifecycle || {}
   const skillDrafts = dashboard?.skill_drafts || {}
   const adaptive = dashboard?.adaptive_engine || {}
+  const bandit = dashboard?.bandit || {}
   const proposed = strategy?.proposed?.executor || {}
   const ab = dashboard?.ab_metrics || {}
   const treatment = ab?.treatment || {}
@@ -171,6 +195,40 @@ export default function App() {
     const rows = adaptive?.top || []
     return rows.map((r, i) => ({ key: i + 1, ...r }))
   }, [adaptive])
+
+  const banditBucketRows = useMemo(() => {
+    const buckets = bandit?.buckets || {}
+    return Object.keys(buckets).map((k, i) => ({
+      key: i + 1,
+      bucket: k,
+      total_pulls_ucb: buckets[k]?.total_pulls_ucb || 0,
+      total_pulls_thompson: buckets[k]?.total_pulls_thompson || 0,
+    }))
+  }, [bandit])
+
+  const banditBucketOptions = useMemo(() => Object.keys(bandit?.buckets || {}).map((k) => ({ label: k, value: k })), [bandit])
+
+  useEffect(() => {
+    if (!banditBucket && banditBucketOptions.length > 0) {
+      setBanditBucket(banditBucketOptions[0].value)
+    }
+  }, [banditBucket, banditBucketOptions])
+
+  const selectedBandit = useMemo(() => {
+    const buckets = bandit?.buckets || {}
+    return buckets[banditBucket] || null
+  }, [bandit, banditBucket])
+
+  const banditCurveRows = useMemo(() => {
+    const points = (bandit?.curves || {})[banditBucket] || []
+    const grouped = {}
+    points.forEach((p) => {
+      const arm = p.arm || 'unknown'
+      if (!grouped[arm]) grouped[arm] = []
+      grouped[arm].push(p)
+    })
+    return Object.keys(grouped).map((arm, i) => ({ key: i + 1, arm, points: grouped[arm].slice(-40) }))
+  }, [bandit, banditBucket])
 
   function updateSessionById(sessionId, updater) {
     setSessions((prev) => sortSessions(prev.map((s) => (s.id === sessionId ? updater(s) : s))))
@@ -572,6 +630,7 @@ export default function App() {
                               <Col span={12}><Statistic title="采纳率" value={((skillDrafts.acceptance_rate || 0) * 100).toFixed(2)} suffix="%" /></Col>
                               <Col span={12}><Statistic title="平均分数提升" value={skillDrafts.avg_score_uplift || 0} precision={4} /></Col>
                               <Col span={12}><Statistic title="能力画像数" value={adaptive.total || 0} /></Col>
+                              <Col span={12}><Statistic title="Bandit 分桶数" value={bandit.bucket_count || 0} /></Col>
                             </Row>
                           </Card>
                         </Space>
@@ -676,6 +735,46 @@ export default function App() {
                                 { title: '使用次数', dataIndex: 'usage_count' },
                               ]}
                             />
+                          </Card>
+
+                          <Card title="Bandit 分桶概览" style={{ marginTop: 16 }}>
+                            <Table
+                              dataSource={banditBucketRows}
+                              rowKey="key"
+                              pagination={{ pageSize: 5, showSizeChanger: false }}
+                              columns={[
+                                { title: '任务分桶', dataIndex: 'bucket' },
+                                { title: 'UCB 拉取', dataIndex: 'total_pulls_ucb', sorter: (a, b) => (a.total_pulls_ucb || 0) - (b.total_pulls_ucb || 0) },
+                                { title: 'TS 拉取', dataIndex: 'total_pulls_thompson', sorter: (a, b) => (a.total_pulls_thompson || 0) - (b.total_pulls_thompson || 0) },
+                              ]}
+                            />
+                          </Card>
+
+                          <Card title="Bandit Arm 曲线" style={{ marginTop: 16 }} extra={
+                            <Select
+                              size="small"
+                              style={{ width: 220 }}
+                              options={banditBucketOptions}
+                              value={banditBucket || undefined}
+                              placeholder="选择任务分桶"
+                              onChange={setBanditBucket}
+                            />
+                          }>
+                            {selectedBandit ? (
+                              <Space direction="vertical" style={{ width: '100%' }} size={12}>
+                                <Text type="secondary">UCB pulls: {selectedBandit.total_pulls_ucb || 0} | Thompson pulls: {selectedBandit.total_pulls_thompson || 0}</Text>
+                                <Table
+                                  dataSource={banditCurveRows}
+                                  rowKey="key"
+                                  pagination={false}
+                                  columns={[
+                                    { title: 'Arm', dataIndex: 'arm' },
+                                    { title: '平均奖励曲线', dataIndex: 'points', render: (v) => <Sparkline points={v || []} /> },
+                                    { title: '末值', dataIndex: 'points', render: (v) => ((v && v.length) ? Number(v[v.length - 1].average_reward).toFixed(4) : '-') },
+                                  ]}
+                                />
+                              </Space>
+                            ) : <Text type="secondary">暂无 Bandit 分桶</Text>}
                           </Card>
                         </Col>
                       </Row>

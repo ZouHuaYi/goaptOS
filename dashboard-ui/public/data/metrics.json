@@ -1,26 +1,24 @@
 {
-  "updated_ts": 1772246548.5456543,
-  "runs_total": 52,
-  "runs_success": 51,
-  "runs_failed": 1,
-  "task_runs_total": 52,
-  "node_runs_total": 74,
-  "success_rate": 0.9807692307692307,
-  "avg_latency_ms": 12667.28,
-  "avg_fix_rounds": 0.0,
+  "updated_ts": 1772248129.8693042,
+  "runs_total": 58,
+  "runs_success": 56,
+  "runs_failed": 2,
+  "task_runs_total": 58,
+  "node_runs_total": 80,
+  "success_rate": 0.9655172413793104,
+  "avg_latency_ms": 14137.26,
+  "avg_fix_rounds": 0.05,
   "top_error_types": [
     {
       "error_type": "unknown",
       "count": 1
+    },
+    {
+      "error_type": "max_fix_rounds_exceeded",
+      "count": 1
     }
   ],
   "recent_run_ids": [
-    "558d6db7-fcb2-4666-9507-42de745a9bd7",
-    "ab8a4fff-dc0b-4452-b166-60782d478586",
-    "36b1d5e7-8f96-4a89-95d9-548a68b5cb39",
-    "2c60b5ad-175b-4a89-b3f6-38e710e11a00",
-    "ca89b095-e74b-4313-bd59-6d6756eaf4ad",
-    "027bf42d-bebe-4a9a-91c7-4bbae3c783f4",
     "5c6097cd-aa24-437a-a192-8bc3595703f8",
     "91d3a3ca-f1a3-4f68-96c5-8e54a83dfc67",
     "219e080b-7834-4cfb-aa5b-35fec1d96c9d",
@@ -34,15 +32,15 @@
     "d9cc5a14-8562-4892-8288-d1a036fc8a62",
     "80b413a8-0ec6-404e-b597-dc40e16b188c",
     "9119381c-e809-4190-a4f4-b4347e93963c",
-    "4a4ef657-d084-4f16-b767-14072f68e300"
+    "4a4ef657-d084-4f16-b767-14072f68e300",
+    "4f0adfab-fb85-48bc-877a-5e48f5cc597f",
+    "9eea8133-3b72-4684-a7f3-ecd38f9a3ff8",
+    "636c90c8-92e9-4061-8608-c739ed542f00",
+    "f43332b0-ea98-4131-ba75-e604f7cb7f16",
+    "08ed14d7-1fd0-4724-aa0d-e021195c56ac",
+    "5f586875-87d8-478f-a7e1-084eab05e65b"
   ],
   "recent_tasks": [
-    "用 Python 获取当前时间并打印",
-    "用 Python 输出 2+3",
-    "用 Python 获取当前时间并打印",
-    "写一个 Python 函数，计算斐波那契前 10 项",
-    "用 Python 获取当前时间并打印",
-    "你具备什么能力",
     "你是在干嘛",
     "你python 能输出什么来，生成一份 pdf 给我",
     "研究中国AI 的 2025的报告，pdf 给我",
@@ -56,6 +54,12 @@
     "用 Python 计算 1+2 并打印结果",
     "用 Python 计算 1+2 并打印结果",
     "用 Python 计算 1+2 并打印结果",
+    "请用 Python 计算 1+2 并打印结果",
+    "你能控制浏览器，用谷歌查询一下deepseek 相关的信息，输出信息给我",
+    "请用 Python 计算 1+2 并打印结果",
+    "请并行处理两个 Python 子任务，分别输出 A 和 B",
+    "请用 Python 计算 1+2 并打印结果",
+    "请并行处理两个 Python 子任务，分别输出 A 和 B",
     "请用 Python 计算 1+2 并打印结果"
   ]
 }
