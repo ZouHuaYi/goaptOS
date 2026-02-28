@@ -26,7 +26,7 @@ from gtos.executor.transaction import TaskTransactionManager
 from gtos.memory import MemoryManager, get_vector_store
 from gtos.metrics import MetricsCollector
 from gtos.observability import GodViewBuilder
-from gtos.plugins import AgentPlugin, FeedbackPlugin, LLMOptimizerPlugin, LoggerPlugin, SkillPlugin
+from gtos.plugins import AgentPlugin, FeedbackPlugin, LLMOptimizerPlugin, LoggerPlugin, SkillPlugin, ThirdPartyPluginLoader
 from gtos.runtime import ReActLoop, ReflectionEngine
 
 
@@ -43,6 +43,7 @@ def _build_plugins(
 ) -> tuple[PluginManager, object, RunLogger]:
     paths = config.get("paths", {})
     plugins_cfg = config.get("plugins", {})
+    third_party_cfg = plugins_cfg.get("third_party", {}) if isinstance(plugins_cfg.get("third_party", {}), dict) else {}
     memory_cfg = config.get("memory", {}).get("vector_store", {})
     enabled = enabled_plugins or plugins_cfg.get("enabled", [])
     skill_store = SkillStore(path=paths.get("skills_file"))
@@ -98,6 +99,23 @@ def _build_plugins(
     for name in enabled:
         if name in name_to_plugin:
             pm.register(name_to_plugin[name])
+    if bool(third_party_cfg.get("enabled", True)):
+        root_dir = third_party_cfg.get("dir", str(Path.cwd() / "plugins" / "third_party"))
+        loader = ThirdPartyPluginLoader(root_dir=root_dir)
+        discovered = loader.discover()
+        for manifest in discovered:
+            plugin_obj = loader.instantiate(
+                manifest,
+                context={
+                    "llm_client": llm_client,
+                    "run_logger": run_logger,
+                    "vector_store": vector_store,
+                    "skill_store": skill_store,
+                    "config": config,
+                },
+            )
+            if plugin_obj is not None:
+                pm.register(plugin_obj)
     return pm, vector_store, run_logger
 
 

@@ -35,6 +35,7 @@ import {
   Space,
   Spin,
   Statistic,
+  Switch,
   Table,
   Tabs,
   Tag,
@@ -132,8 +133,14 @@ function Sparkline({ points = [], color = '#1677ff' }) {
 export default function App() {
   const [dashboard, setDashboard] = useState(null)
   const [strategy, setStrategy] = useState(null)
+  const [runtimeStatus, setRuntimeStatus] = useState(null)
+  const [pluginMarket, setPluginMarket] = useState(null)
+  const [pluginVersions, setPluginVersions] = useState({})
   const [chatInput, setChatInput] = useState('')
   const [chatLoading, setChatLoading] = useState(false)
+  const [detailMode, setDetailMode] = useState(false)
+  const [installingPlugin, setInstallingPlugin] = useState('')
+  const [pluginActionLoading, setPluginActionLoading] = useState('')
   const [drawerOpen, setDrawerOpen] = useState(false)
   const [sessionDrawerOpen, setSessionDrawerOpen] = useState(false)
   const [rightCollapsed, setRightCollapsed] = useState(false)
@@ -230,17 +237,90 @@ export default function App() {
     return Object.keys(grouped).map((arm, i) => ({ key: i + 1, arm, points: grouped[arm].slice(-40) }))
   }, [bandit, banditBucket])
 
+  const pluginMarketRows = useMemo(() => {
+    const rows = pluginMarket?.plugins || []
+    return rows.map((r, i) => ({ key: i + 1, ...r }))
+  }, [pluginMarket])
+
+  const installedPluginRows = useMemo(() => {
+    const rows = pluginMarket?.installed || []
+    return rows.map((r, i) => ({ key: i + 1, ...r }))
+  }, [pluginMarket])
+
   function updateSessionById(sessionId, updater) {
     setSessions((prev) => sortSessions(prev.map((s) => (s.id === sessionId ? updater(s) : s))))
   }
 
   async function refreshAll() {
-    const [d, s] = await Promise.all([
+    const [d, s, rt, pm] = await Promise.all([
       safeFetch('/data/dashboard.json'),
       safeFetch('/data/strategy_state.json'),
+      safeFetch('/api/runtime/status'),
+      safeFetch('/api/plugins/market'),
     ])
     setDashboard(d)
     setStrategy(s)
+    setRuntimeStatus(rt)
+    setPluginMarket(pm)
+    const installed = (pm?.installed || []).map((x) => String(x?.name || '')).filter(Boolean)
+    if (installed.length > 0) {
+      const entries = await Promise.all(
+        installed.map(async (name) => {
+          const r = await safeFetch(`/api/plugins/versions?name=${encodeURIComponent(name)}`)
+          return [name, r?.versions || []]
+        })
+      )
+      setPluginVersions(Object.fromEntries(entries))
+    } else {
+      setPluginVersions({})
+    }
+  }
+
+  async function installPlugin(name) {
+    const n = String(name || '').trim()
+    if (!n || installingPlugin) return
+    setInstallingPlugin(n)
+    try {
+      const res = await fetch('/api/plugins/install', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: n }),
+      })
+      const data = await res.json()
+      if (!res.ok || !data?.ok) {
+        message.error(`安装失败：${data?.error || res.status}`)
+      } else {
+        message.success(`插件已安装：${n}`)
+        await refreshAll()
+      }
+    } catch (e) {
+      message.error(`安装失败：${String(e)}`)
+    } finally {
+      setInstallingPlugin('')
+    }
+  }
+
+  async function pluginAction(action, payload, doneMessage) {
+    const key = `${action}:${payload?.name || ''}`
+    setPluginActionLoading(key)
+    try {
+      const res = await fetch(`/api/plugins/${action}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload || {}),
+      })
+      const data = await res.json()
+      if (!res.ok || !data?.ok) {
+        message.error(`操作失败：${data?.error || res.status}`)
+      } else {
+        if (doneMessage) message.success(doneMessage)
+        await refreshAll()
+      }
+    } catch (e) {
+      message.error(`操作失败：${String(e)}`)
+    } finally {
+      setPluginActionLoading('')
+    }
   }
 
   useEffect(() => {
@@ -358,7 +438,7 @@ export default function App() {
       const res = await fetch('/api/chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ message: text }),
+        body: JSON.stringify({ message: text, detail_mode: detailMode }),
         signal: ctrl.signal,
       })
       const data = await res.json()
@@ -565,13 +645,19 @@ export default function App() {
                               placeholder="请输入任务。回车发送，Shift+回车换行。"
                             />
 
-                            <div className="composer-actions">
+                          <div className="composer-actions">
+                            <Space>
                               <Text type="secondary">输入区固定底部，消息区独立滚动。</Text>
-                              <Space>
-                                {chatLoading ? <Button danger icon={<StopOutlined />} onClick={stopCurrentRequest}>停止</Button> : null}
-                                <Button type="primary" icon={<SendOutlined />} onClick={() => sendChat()} loading={chatLoading}>发送</Button>
+                              <Space size={6}>
+                                <Text type="secondary">详细回复</Text>
+                                <Switch size="small" checked={detailMode} onChange={setDetailMode} />
                               </Space>
-                            </div>
+                            </Space>
+                            <Space>
+                              {chatLoading ? <Button danger icon={<StopOutlined />} onClick={stopCurrentRequest}>停止</Button> : null}
+                              <Button type="primary" icon={<SendOutlined />} onClick={() => sendChat()} loading={chatLoading}>发送</Button>
+                            </Space>
+                          </div>
                           </div>
                         </Card>
                       </Col>
@@ -775,6 +861,111 @@ export default function App() {
                                 />
                               </Space>
                             ) : <Text type="secondary">暂无 Bandit 分桶</Text>}
+                          </Card>
+
+                          <Card title="运行时能力" style={{ marginTop: 16 }}>
+                            <Descriptions size="small" column={1} labelStyle={{ width: 140 }}>
+                              <Descriptions.Item label="ReAct Loop">{String(Boolean(runtimeStatus?.runtime?.react_enabled))}</Descriptions.Item>
+                              <Descriptions.Item label="Self Reflection">{String(Boolean(runtimeStatus?.runtime?.reflection_enabled))}</Descriptions.Item>
+                              <Descriptions.Item label="Multi-Agent">{String(Boolean(runtimeStatus?.runtime?.multi_agent_enabled))}</Descriptions.Item>
+                              <Descriptions.Item label="Third-Party 插件">{String(Boolean(runtimeStatus?.plugins?.third_party_enabled))}</Descriptions.Item>
+                              <Descriptions.Item label="插件目录">
+                                <Text ellipsis style={{ maxWidth: 260, display: 'inline-block' }}>
+                                  {runtimeStatus?.plugins?.third_party_dir || '-'}
+                                </Text>
+                              </Descriptions.Item>
+                            </Descriptions>
+                          </Card>
+
+                          <Card
+                            title="插件市场（在线/本地索引）"
+                            style={{ marginTop: 16 }}
+                            extra={
+                              <Button
+                                size="small"
+                                loading={pluginActionLoading === 'reload:'}
+                                onClick={() => pluginAction('reload', {}, '插件已热重载')}
+                              >
+                                热重载
+                              </Button>
+                            }
+                          >
+                            <Paragraph type="secondary" style={{ marginBottom: 10 }}>
+                              GTOS 版本：{pluginMarket?.gtos_version || '-'}
+                            </Paragraph>
+                            <Table
+                              dataSource={pluginMarketRows}
+                              rowKey="key"
+                              pagination={{ pageSize: 5, showSizeChanger: false }}
+                              columns={[
+                                { title: '名称', dataIndex: 'name' },
+                                { title: '版本', dataIndex: 'version', render: (v) => v || '-' },
+                                { title: '兼容', dataIndex: 'compatible', render: (v) => <Tag color={v ? 'green' : 'red'}>{String(Boolean(v))}</Tag> },
+                                {
+                                  title: '操作',
+                                  dataIndex: 'name',
+                                  render: (v, row) => (
+                                    <Button
+                                      size="small"
+                                      type="primary"
+                                      disabled={!row.compatible}
+                                      loading={installingPlugin === String(v)}
+                                      onClick={() => installPlugin(v)}
+                                    >
+                                      安装
+                                    </Button>
+                                  )
+                                },
+                              ]}
+                            />
+                          </Card>
+
+                          <Card title="已安装第三方插件" style={{ marginTop: 16 }}>
+                            <Table
+                              dataSource={installedPluginRows}
+                              rowKey="key"
+                              pagination={{ pageSize: 5, showSizeChanger: false }}
+                              columns={[
+                                { title: '名称', dataIndex: 'name' },
+                                { title: '状态', dataIndex: 'status', render: (v) => <Tag color="blue">{v || 'installed'}</Tag> },
+                                { title: '启用', dataIndex: 'enabled', render: (v) => String(Boolean(v)) },
+                                {
+                                  title: '可回滚版本',
+                                  dataIndex: 'name',
+                                  render: (v) => (pluginVersions[String(v)] || []).length,
+                                },
+                                {
+                                  title: '操作',
+                                  dataIndex: 'name',
+                                  render: (v, row) => (
+                                    <Space size={6}>
+                                      <Button
+                                        size="small"
+                                        loading={pluginActionLoading === `toggle:${String(v)}`}
+                                        onClick={() => pluginAction('toggle', { name: v, enabled: !Boolean(row.enabled) }, Boolean(row.enabled) ? '已禁用' : '已启用')}
+                                      >
+                                        {Boolean(row.enabled) ? '禁用' : '启用'}
+                                      </Button>
+                                      <Button
+                                        size="small"
+                                        loading={pluginActionLoading === `rollback:${String(v)}`}
+                                        onClick={() => pluginAction('rollback', { name: v }, '已回滚到最近版本')}
+                                      >
+                                        回滚
+                                      </Button>
+                                      <Button
+                                        size="small"
+                                        danger
+                                        loading={pluginActionLoading === `uninstall:${String(v)}`}
+                                        onClick={() => pluginAction('uninstall', { name: v }, '已卸载')}
+                                      >
+                                        卸载
+                                      </Button>
+                                    </Space>
+                                  )
+                                },
+                              ]}
+                            />
                           </Card>
                         </Col>
                       </Row>

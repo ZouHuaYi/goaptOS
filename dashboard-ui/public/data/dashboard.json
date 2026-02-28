@@ -1,12 +1,12 @@
 {
-  "generated_ts": 1772248129.8743045,
+  "generated_ts": 1772255355.1687076,
   "window": 100,
   "summary": {
-    "window": 58,
-    "success": 56,
+    "window": 59,
+    "success": 57,
     "failed": 2,
-    "success_rate": 0.9655172413793104,
-    "avg_latency_ms": 14137.26,
+    "success_rate": 0.9661016949152542,
+    "avg_latency_ms": 14546.52,
     "avg_fix_rounds": 0.05,
     "top_errors": [
       {
@@ -22,13 +22,13 @@
   },
   "ab_metrics": {
     "treatment": {
-      "runs": 25,
-      "success": 25,
-      "first_pass_success": 22,
+      "runs": 26,
+      "success": 26,
+      "first_pass_success": 23,
       "success_rate": 1.0,
-      "first_pass_rate": 0.88
+      "first_pass_rate": 0.8846
     },
-    "updated_ts": 1772248129.8580897,
+    "updated_ts": 1772255330.7246954,
     "control": {
       "runs": 29,
       "success": 27,
@@ -38,15 +38,15 @@
     }
   },
   "skill_lifecycle": {
-    "total": 65,
-    "active": 65,
+    "total": 66,
+    "active": 66,
     "expired": 0,
-    "avg_score": 0.5492,
+    "avg_score": 0.5546,
     "score_buckets": {
       "0-0.3": 1,
       "0.3-0.6": 55,
       "0.6-0.8": 0,
-      "0.8-1.0": 9
+      "0.8-1.0": 10
     },
     "version_distribution": [
       {
@@ -208,10 +208,6 @@
         "score": 0.5
       },
       {
-        "ts": 1772245537.4038603,
-        "score": 0.5
-      },
-      {
         "ts": 1772245540.086001,
         "score": 0.905
       },
@@ -249,6 +245,10 @@
       },
       {
         "ts": 1772248129.8535774,
+        "score": 0.905
+      },
+      {
+        "ts": 1772255355.1528616,
         "score": 0.905
       }
     ],
@@ -317,9 +317,9 @@
         "status": "active"
       },
       {
-        "skill_id": "a648c94694faaac0",
-        "task": "写 Python 脚本计算 11+22 并打印",
-        "score": 0.5,
+        "skill_id": "dfc63615065ef8a2",
+        "task": "[reflection] 你爱吃什么",
+        "score": 0.905,
         "version": 1,
         "status": "active"
       }
@@ -336,27 +336,37 @@
   },
   "adaptive_engine": {
     "total": 8,
-    "updated_at": 1772248129.8650866,
+    "updated_at": 1772255355.1570415,
     "top": [
       {
         "name": "logger",
-        "success_rate": 0.849708,
-        "avg_time_ms": 16266.700632,
-        "avg_retries": 0.2729,
-        "avg_token_cost": 87.213134,
+        "success_rate": 0.887281,
+        "avg_time_ms": 21770.935474,
+        "avg_retries": 0.204675,
+        "avg_token_cost": 65.909851,
         "risk_level": 0.2,
-        "usage_count": 6,
-        "last_updated": 1772248129.8650866
+        "usage_count": 7,
+        "last_updated": 1772255355.1570415
       },
       {
         "name": "feedback",
+        "success_rate": 0.887281,
+        "avg_time_ms": 21770.935474,
+        "avg_retries": 0.204675,
+        "avg_token_cost": 65.909851,
+        "risk_level": 0.2,
+        "usage_count": 7,
+        "last_updated": 1772255355.1570415
+      },
+      {
+        "name": "single_task",
         "success_rate": 0.849708,
-        "avg_time_ms": 16266.700632,
+        "avg_time_ms": 24353.035007,
         "avg_retries": 0.2729,
-        "avg_token_cost": 87.213134,
+        "avg_token_cost": 82.697509,
         "risk_level": 0.2,
         "usage_count": 6,
-        "last_updated": 1772248129.8650866
+        "last_updated": 1772255355.1570415
       },
       {
         "name": "agent",
@@ -369,14 +379,14 @@
         "last_updated": 1772248129.8650866
       },
       {
-        "name": "single_task",
+        "name": "skill",
         "success_rate": 0.79961,
-        "avg_time_ms": 19709.500009,
+        "avg_time_ms": 26049.674073,
         "avg_retries": 0.363867,
-        "avg_token_cost": 109.596679,
+        "avg_token_cost": 92.565429,
         "risk_level": 0.2,
         "usage_count": 5,
-        "last_updated": 1772248129.8650866
+        "last_updated": 1772255355.1570415
       },
       {
         "name": "llm_optimizer",
@@ -387,16 +397,6 @@
         "risk_level": 0.2,
         "usage_count": 2,
         "last_updated": 1772247304.4532926
-      },
-      {
-        "name": "skill",
-        "success_rate": 0.732813,
-        "avg_time_ms": 21971.68543,
-        "avg_retries": 0.485156,
-        "avg_token_cost": 122.753906,
-        "risk_level": 0.2,
-        "usage_count": 4,
-        "last_updated": 1772248129.8650866
       },
       {
         "name": "planner",
@@ -421,8 +421,8 @@
     ]
   },
   "bandit": {
-    "bucket_count": 1,
-    "updated_at": 1772248129.8662632,
+    "bucket_count": 2,
+    "updated_at": 1772255355.1580858,
     "exploration_weight": 2.0,
     "primary_algo": "ucb",
     "ab_mode": "shadow",
@@ -653,6 +653,232 @@
             "average_reward": 0.0
           }
         ]
+      },
+      "simple:low:general": {
+        "total_pulls_ucb": 1,
+        "total_pulls_thompson": 1,
+        "ucb_arms": [
+          {
+            "name": "single_task|logger+feedback+skill",
+            "pull_count": 1,
+            "total_reward": 0.234127,
+            "average_reward": 0.234127
+          },
+          {
+            "name": "single_task|logger+feedback+skill+agent",
+            "pull_count": 0,
+            "total_reward": 0.0,
+            "average_reward": 0.0
+          },
+          {
+            "name": "single_task|logger+feedback+skill+llm_optimizer",
+            "pull_count": 0,
+            "total_reward": 0.0,
+            "average_reward": 0.0
+          },
+          {
+            "name": "single_task|agent+llm_optimizer+logger+feedback+skill",
+            "pull_count": 0,
+            "total_reward": 0.0,
+            "average_reward": 0.0
+          },
+          {
+            "name": "planner_serial|logger+feedback+skill",
+            "pull_count": 0,
+            "total_reward": 0.0,
+            "average_reward": 0.0
+          },
+          {
+            "name": "planner_serial|logger+feedback+skill+agent",
+            "pull_count": 0,
+            "total_reward": 0.0,
+            "average_reward": 0.0
+          },
+          {
+            "name": "planner_serial|logger+feedback+skill+llm_optimizer",
+            "pull_count": 0,
+            "total_reward": 0.0,
+            "average_reward": 0.0
+          },
+          {
+            "name": "planner_serial|agent+llm_optimizer+logger+feedback+skill",
+            "pull_count": 0,
+            "total_reward": 0.0,
+            "average_reward": 0.0
+          },
+          {
+            "name": "planner_parallel|logger+feedback+skill",
+            "pull_count": 0,
+            "total_reward": 0.0,
+            "average_reward": 0.0
+          },
+          {
+            "name": "planner_parallel|logger+feedback+skill+agent",
+            "pull_count": 0,
+            "total_reward": 0.0,
+            "average_reward": 0.0
+          },
+          {
+            "name": "planner_parallel|logger+feedback+skill+llm_optimizer",
+            "pull_count": 0,
+            "total_reward": 0.0,
+            "average_reward": 0.0
+          },
+          {
+            "name": "planner_parallel|agent+llm_optimizer+logger+feedback+skill",
+            "pull_count": 0,
+            "total_reward": 0.0,
+            "average_reward": 0.0
+          }
+        ],
+        "thompson_arms": [
+          {
+            "name": "single_task|logger+feedback+skill",
+            "pull_count": 1,
+            "total_reward": 0.234127,
+            "average_reward": 0.234127
+          },
+          {
+            "name": "single_task|logger+feedback+skill+agent",
+            "pull_count": 0,
+            "total_reward": 0.0,
+            "average_reward": 0.0
+          },
+          {
+            "name": "single_task|logger+feedback+skill+llm_optimizer",
+            "pull_count": 0,
+            "total_reward": 0.0,
+            "average_reward": 0.0
+          },
+          {
+            "name": "single_task|agent+llm_optimizer+logger+feedback+skill",
+            "pull_count": 0,
+            "total_reward": 0.0,
+            "average_reward": 0.0
+          },
+          {
+            "name": "planner_serial|logger+feedback+skill",
+            "pull_count": 0,
+            "total_reward": 0.0,
+            "average_reward": 0.0
+          },
+          {
+            "name": "planner_serial|logger+feedback+skill+agent",
+            "pull_count": 0,
+            "total_reward": 0.0,
+            "average_reward": 0.0
+          },
+          {
+            "name": "planner_serial|logger+feedback+skill+llm_optimizer",
+            "pull_count": 0,
+            "total_reward": 0.0,
+            "average_reward": 0.0
+          },
+          {
+            "name": "planner_serial|agent+llm_optimizer+logger+feedback+skill",
+            "pull_count": 0,
+            "total_reward": 0.0,
+            "average_reward": 0.0
+          },
+          {
+            "name": "planner_parallel|logger+feedback+skill",
+            "pull_count": 0,
+            "total_reward": 0.0,
+            "average_reward": 0.0
+          },
+          {
+            "name": "planner_parallel|logger+feedback+skill+agent",
+            "pull_count": 0,
+            "total_reward": 0.0,
+            "average_reward": 0.0
+          },
+          {
+            "name": "planner_parallel|logger+feedback+skill+llm_optimizer",
+            "pull_count": 0,
+            "total_reward": 0.0,
+            "average_reward": 0.0
+          },
+          {
+            "name": "planner_parallel|agent+llm_optimizer+logger+feedback+skill",
+            "pull_count": 0,
+            "total_reward": 0.0,
+            "average_reward": 0.0
+          }
+        ],
+        "arms": [
+          {
+            "name": "single_task|logger+feedback+skill",
+            "pull_count": 1,
+            "total_reward": 0.234127,
+            "average_reward": 0.234127
+          },
+          {
+            "name": "single_task|logger+feedback+skill+agent",
+            "pull_count": 0,
+            "total_reward": 0.0,
+            "average_reward": 0.0
+          },
+          {
+            "name": "single_task|logger+feedback+skill+llm_optimizer",
+            "pull_count": 0,
+            "total_reward": 0.0,
+            "average_reward": 0.0
+          },
+          {
+            "name": "single_task|agent+llm_optimizer+logger+feedback+skill",
+            "pull_count": 0,
+            "total_reward": 0.0,
+            "average_reward": 0.0
+          },
+          {
+            "name": "planner_serial|logger+feedback+skill",
+            "pull_count": 0,
+            "total_reward": 0.0,
+            "average_reward": 0.0
+          },
+          {
+            "name": "planner_serial|logger+feedback+skill+agent",
+            "pull_count": 0,
+            "total_reward": 0.0,
+            "average_reward": 0.0
+          },
+          {
+            "name": "planner_serial|logger+feedback+skill+llm_optimizer",
+            "pull_count": 0,
+            "total_reward": 0.0,
+            "average_reward": 0.0
+          },
+          {
+            "name": "planner_serial|agent+llm_optimizer+logger+feedback+skill",
+            "pull_count": 0,
+            "total_reward": 0.0,
+            "average_reward": 0.0
+          },
+          {
+            "name": "planner_parallel|logger+feedback+skill",
+            "pull_count": 0,
+            "total_reward": 0.0,
+            "average_reward": 0.0
+          },
+          {
+            "name": "planner_parallel|logger+feedback+skill+agent",
+            "pull_count": 0,
+            "total_reward": 0.0,
+            "average_reward": 0.0
+          },
+          {
+            "name": "planner_parallel|logger+feedback+skill+llm_optimizer",
+            "pull_count": 0,
+            "total_reward": 0.0,
+            "average_reward": 0.0
+          },
+          {
+            "name": "planner_parallel|agent+llm_optimizer+logger+feedback+skill",
+            "pull_count": 0,
+            "total_reward": 0.0,
+            "average_reward": 0.0
+          }
+        ]
       }
     },
     "history": [
@@ -669,6 +895,13 @@
         "selected_algo": "ucb",
         "arm": "single_task|logger+feedback+skill+agent",
         "reward": 0.939346
+      },
+      {
+        "ts": 1772255355.1580858,
+        "bucket": "simple:low:general",
+        "selected_algo": "ucb",
+        "arm": "single_task|logger+feedback+skill",
+        "reward": 0.234127
       }
     ],
     "curves": {
@@ -685,21 +918,29 @@
           "average_reward": 0.939346,
           "reward": 0.939346
         }
+      ],
+      "simple:low:general": [
+        {
+          "step": 3,
+          "arm": "single_task|logger+feedback+skill",
+          "average_reward": 0.234127,
+          "reward": 0.234127
+        }
       ]
     }
   },
   "last_assessment": {
     "risk_level": "low",
-    "capability_score": 0.732,
-    "task_type": "python_code",
+    "capability_score": 0.482,
+    "task_type": "general",
     "matched_blocked": [],
     "matched_risky": [],
     "dynamic": {
       "enabled": true,
       "risk_boost": "low",
-      "samples": 102,
-      "fail_rate": 0.02,
-      "avg_fix_rounds": 0.02
+      "samples": 28,
+      "fail_rate": 0.143,
+      "avg_fix_rounds": 0.393
     },
     "mode": "advise"
   },
@@ -714,29 +955,28 @@
     "execution_state": "SUCCESS",
     "adaptive_decision": {
       "task_profile": {
-        "complexity_score": 0.0917,
-        "estimated_code_size": 33,
+        "complexity_score": 0.05,
+        "estimated_code_size": 30,
         "risk_level": "low",
-        "domain_type": "python",
+        "domain_type": "general",
         "requires_parallel": false,
         "requires_external_tool": false,
         "time_sensitive": false
       },
       "scores": {
-        "logger": 0.176521,
-        "feedback": 0.176521,
-        "skill": 0.082111,
-        "agent": 0.324353,
+        "logger": 0.207301,
+        "feedback": 0.207301,
+        "skill": 0.136493,
+        "agent": 0.361359,
         "llm_optimizer": 0.324353,
         "planner": 0.33124,
-        "single_task": 0.135678,
+        "single_task": 0.176669,
         "parallel_dag": 0.280033
       },
       "selected_plugins": [
         "logger",
         "feedback",
-        "skill",
-        "agent"
+        "skill"
       ],
       "execution_overrides": {
         "use_planner": false,
@@ -746,36 +986,35 @@
         "dag_fail_policy": "skip"
       },
       "bandit": {
-        "bucket": "simple:low:python",
+        "bucket": "simple:low:general",
         "selected_arm": "single_task",
-        "selected_combo_arm": "single_task|logger+feedback+skill+agent",
+        "selected_combo_arm": "single_task|logger+feedback+skill",
         "selected_plugins": [
           "logger",
           "feedback",
-          "skill",
-          "agent"
+          "skill"
         ],
         "selected_algo": "ucb",
         "scores": {
-          "single_task|logger+feedback+skill+agent": 9999.0
+          "single_task|logger+feedback+skill": 9999.0
         },
-        "shadow_arm": "planner_serial|logger+feedback+skill",
+        "shadow_arm": "planner_serial|agent+llm_optimizer+logger+feedback+skill",
         "shadow_algo": "thompson",
         "shadow_scores": {
-          "single_task|logger+feedback+skill": 0.26065,
-          "single_task|logger+feedback+skill+agent": 0.101161,
-          "single_task|logger+feedback+skill+llm_optimizer": 0.469828,
-          "single_task|agent+llm_optimizer+logger+feedback+skill": 0.722581,
-          "planner_serial|logger+feedback+skill": 0.986693,
-          "planner_serial|logger+feedback+skill+agent": 0.407038,
-          "planner_serial|logger+feedback+skill+llm_optimizer": 0.834858,
-          "planner_serial|agent+llm_optimizer+logger+feedback+skill": 0.030524,
-          "planner_parallel|logger+feedback+skill": 0.900912,
-          "planner_parallel|logger+feedback+skill+agent": 0.962502,
-          "planner_parallel|logger+feedback+skill+llm_optimizer": 0.802175,
-          "planner_parallel|agent+llm_optimizer+logger+feedback+skill": 0.414088
+          "single_task|logger+feedback+skill": 0.873489,
+          "single_task|logger+feedback+skill+agent": 0.637252,
+          "single_task|logger+feedback+skill+llm_optimizer": 0.210308,
+          "single_task|agent+llm_optimizer+logger+feedback+skill": 0.407348,
+          "planner_serial|logger+feedback+skill": 0.640354,
+          "planner_serial|logger+feedback+skill+agent": 0.881447,
+          "planner_serial|logger+feedback+skill+llm_optimizer": 0.188608,
+          "planner_serial|agent+llm_optimizer+logger+feedback+skill": 0.989378,
+          "planner_parallel|logger+feedback+skill": 0.692231,
+          "planner_parallel|logger+feedback+skill+agent": 0.156112,
+          "planner_parallel|logger+feedback+skill+llm_optimizer": 0.192491,
+          "planner_parallel|agent+llm_optimizer+logger+feedback+skill": 0.427322
         },
-        "reward": 0.939346
+        "reward": 0.234127
       }
     }
   }

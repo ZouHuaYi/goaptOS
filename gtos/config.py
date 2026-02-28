@@ -51,6 +51,20 @@ def _default_config() -> dict[str, Any]:
         },
         "plugins": {
             "enabled": ["logger", "feedback", "skill", "agent", "llm_optimizer"],
+            "third_party": {
+                "enabled": True,
+                "dir": str(root / "plugins" / "third_party"),
+                "market": {
+                    "index_url": "",
+                    "index_file": str(data_dir / "plugin_market_index.json"),
+                    "installed_file": str(data_dir / "plugin_market_installed.json"),
+                    "security": {
+                        "allowed_index_domains": [],
+                        "index_sha256": "",
+                        "plugin_hash_required": False,
+                    },
+                },
+            },
             "skill": {
                 "recent_count": 3,
                 "retrieval_top_k": 5,
@@ -250,6 +264,22 @@ def _resolve_paths(cfg: dict[str, Any], root: Path) -> dict[str, Any]:
         if isinstance(v, str) and v and not Path(v).is_absolute():
             vis_resolved[k] = str((root / v).resolve())
     out["visualization"] = vis_resolved
+    plugins = out.get("plugins", {})
+    if isinstance(plugins, dict):
+        tp = plugins.get("third_party", {})
+        if isinstance(tp, dict):
+            d = tp.get("dir")
+            if isinstance(d, str) and d and not Path(d).is_absolute():
+                tp["dir"] = str((root / d).resolve())
+            market = tp.get("market", {})
+            if isinstance(market, dict):
+                for k in ("index_file", "installed_file"):
+                    v = market.get(k)
+                    if isinstance(v, str) and v and not Path(v).is_absolute():
+                        market[k] = str((root / v).resolve())
+                tp["market"] = market
+            plugins["third_party"] = tp
+        out["plugins"] = plugins
     return out
 
 
