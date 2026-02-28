@@ -58,6 +58,10 @@ run_web_api.cmd
 | `executor.dag_max_workers` | 并行时最大线程数 |
 | `executor.node_retry_count` | 节点级额外重试次数（DAG 模式） |
 | `executor.dag_fail_policy` | `stop` / `skip` / `continue` 失败策略 |
+| `runtime.tool_catalog_max_items` | ReAct 注入给模型的可用工具目录条数上限 |
+| `runtime.tool_catalog_max_chars` | ReAct 工具目录注入块最大字符数 |
+| `runtime.tool_activation_mode` | MCP 工具激活模式：`on_demand`（默认）/ `always` / `off` |
+| `runtime.intent_activation.mode` | 统一意图激活模式（作用于 MCP、skill、agent、llm_optimizer）：`on_demand` / `always` / `off` |
 | `self_cognition + planner` | 风险高时自动降级执行策略（禁并行、`fail_policy=stop`） |
 | `analytics.runs_file` | 任务运行事件日志（JSONL）路径 |
 | `analytics.metrics_file` | 聚合指标输出路径 |
@@ -77,9 +81,42 @@ run_web_api.cmd
 | `llm.tokenizer_model` | 分词模型（可与 `model` 独立配置，用于 token 估算与截断） |
 | `llm.api_key_env` / `llm.api_key` | API Key 来源（优先 `api_key`，否则读取环境变量） |
 | `llm.max_input_tokens` / `llm.max_output_tokens` | 输入截断和输出长度控制 |
+| `capabilities.mcp_servers` | MCP 外部能力列表（启动时发现工具并注册到运行时能力层） |
 
 指定配置文件路径：`python -m gtos.main --config /path/to/config.json`，或设置环境变量 `GTOS_CONFIG=/path/to/config.json`。
 直接执行外部 DAG：`python -m gtos.main --config docs/examples/config.parallel-dag.optimized.json --dag-file docs/examples/dag.parallel-multi-agent.json`。
+
+MCP Server 配置示例：
+
+```json
+{
+  "capabilities": {
+    "mcp_servers": [
+      {
+        "name": "figma",
+        "endpoint": "http://127.0.0.1:4000",
+        "timeout_seconds": 8,
+        "permissions": {
+          "allowed_tools": ["figma.export_node", "figma.get_file"],
+          "allowed_actions": ["read_file", "export_node"]
+        }
+      }
+    ]
+  }
+}
+```
+
+可用能力目录接口（本地 API）：
+
+```text
+GET /api/capabilities/mcp
+```
+
+ReAct 动作里可调用 MCP 工具：
+
+```json
+{"type":"tool_call","name":"mcp:figma:figma.export_node","arguments":{"nodeId":"1:2"}}
+```
 
 ## 架构（自外而内）
 

@@ -151,6 +151,20 @@ class MemoryManager:
                 pass
         return out
 
+    def recent_semantic(self, limit: int = 20) -> list[dict[str, Any]]:
+        with sqlite3.connect(self._db) as conn:
+            conn.row_factory = sqlite3.Row
+            rows = conn.execute(
+                """
+                SELECT id, summary, tags_json, source, created_at
+                FROM semantic_memory
+                ORDER BY id DESC
+                LIMIT ?
+                """,
+                (max(1, int(limit)),),
+            ).fetchall()
+        return [self._row_semantic_dict(r) for r in rows]
+
     def _auto_abstract_episodic_to_semantic(self, *, task: str, result: dict[str, Any]) -> None:
         if bool(result.get("success")):
             return
@@ -209,4 +223,3 @@ class MemoryManager:
             "source": row["source"],
             "created_at": row["created_at"],
         }
-

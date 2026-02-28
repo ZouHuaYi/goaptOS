@@ -3,16 +3,16 @@
   "mode": "suggest",
   "applied": false,
   "metrics_window": {
-    "window": 76,
-    "success": 73,
-    "failed": 3,
-    "success_rate": 0.9605263157894737,
-    "avg_latency_ms": 20997.15,
+    "window": 80,
+    "success": 74,
+    "failed": 6,
+    "success_rate": 0.925,
+    "avg_latency_ms": 27322.22,
     "avg_fix_rounds": 0.04,
     "top_errors": [
       {
         "error_type": "unknown",
-        "count": 2
+        "count": 5
       },
       {
         "error_type": "max_fix_rounds_exceeded",

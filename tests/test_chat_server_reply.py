@@ -1,4 +1,4 @@
-from gtos.web.chat_server import _extract_detailed_reply, _extract_reply
+from gtos.web.chat_server import _compose_task_prompt, _extract_detailed_reply, _extract_reply
 
 
 def test_extract_reply_prefers_stdout_single() -> None:
@@ -38,3 +38,16 @@ def test_extract_detailed_reply_includes_reflection_and_optimizer() -> None:
     )
     assert "reflection.task_type=unit" in reply
     assert "prompt_optimization.applied=True" in reply
+
+
+def test_compose_task_prompt_includes_history_block() -> None:
+    out = _compose_task_prompt("当前问题", "用户: 你好\n助手: 你好")
+    assert "[Conversation History]" in out
+    assert "[Current Task]" in out
+    assert "当前问题" in out
+
+
+def test_compose_task_prompt_includes_recalled_block() -> None:
+    out = _compose_task_prompt("继续", "", recalled=["用户: 之前讨论过排序优化"])
+    assert "[Relevant Past Conversation]" in out
+    assert "排序优化" in out

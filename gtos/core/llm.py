@@ -71,8 +71,9 @@ class OpenAICompatibleLLM:
         "refine_task": "Rewrite task descriptions for code generation: concise, specific, testable.",
         "react_step": (
             "You are an execution agent. Return ONLY one JSON action object.\n"
-            'Allowed action types: code_exec, finish.\n'
+            'Allowed action types: code_exec, tool_call, finish.\n'
             'For code_exec use: {"type":"code_exec","language":"python","content":"<task prompt or code intent>"}\n'
+            'For tool_call use: {"type":"tool_call","name":"mcp:<server>:<tool>","arguments":{"key":"value"}}\n'
             'For finish use: {"type":"finish","result":{"success":true|false,"error":"..."}}\n'
             "Do not use markdown."
         ),

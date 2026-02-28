@@ -6,6 +6,7 @@ import json
 import logging
 import time
 from pathlib import Path
+from typing import Any
 from gtos.agents import AgentOrchestrator, CoderAgent, MemoryAgent, PlannerAgent, ReviewerAgent
 from gtos.adaptive_engine import (
     AdaptiveDecisionEngine,
@@ -19,6 +20,7 @@ from gtos.analytics.prompt_auto_optimizer import PromptAutoOptimizer
 from gtos.analytics.strategy_optimizer import StrategyOptimizer
 from gtos.cognition import SelfCognition
 from gtos.config import load_config
+from gtos.core.capability import CapabilityRuntimeRegistry, MCPCapabilityAdapter, build_mcp_server_configs
 from gtos.core.events import EventName, PlanGeneratedPayload, ReflectionCompletePayload
 from gtos.core.interfaces.result import append_log, normalize_error
 from gtos.core.llm import LLMClient
@@ -71,6 +73,126 @@ def _load_dag_override(dag_file: str | None) -> tuple[list[dict], dict]:
 def _setup_logging(level: str) -> None:
     lvl = getattr(logging, level.upper(), logging.INFO)
     logging.basicConfig(level=lvl, format="%(levelname)s [%(name)s] %(message)s")
+
+
+def _build_capability_layer(config: dict) -> tuple[CapabilityRuntimeRegistry, dict]:
+    reg = CapabilityRuntimeRegistry()
+    capability_cfg = config.get("capabilities", {}) if isinstance(config.get("capabilities", {}), dict) else {}
+    mcp_servers = capability_cfg.get("mcp_servers", [])
+    runs_file = str((config.get("analytics", {}) or {}).get("runs_file", "data/runs.jsonl"))
+
+    def _audit_sink(event: dict) -> None:
+        try:
+            p = Path(runs_file)
+            p.parent.mkdir(parents=True, exist_ok=True)
+            payload = {**event, "ts": time.time(), "level": "capability"}
+            with open(p, "a", encoding="utf-8") as f:
+                f.write(json.dumps(payload, ensure_ascii=False) + "\n")
+        except Exception:
+            return
+
+    def _recent_success_tool_counts(limit: int = 400) -> dict[str, int]:
+        p = Path(runs_file)
+        if not p.exists():
+            return {}
+        try:
+            with open(p, "r", encoding="utf-8") as f:
+                lines = f.readlines()
+        except Exception:
+            return {}
+        counts: dict[str, int] = {}
+        for raw in lines[-max(1, int(limit)) :]:
+            try:
+                row = json.loads(raw)
+            except Exception:
+                continue
+            if str(row.get("event", "")) != "mcp_tool_call":
+                continue
+            if not bool(row.get("ok", False)):
+                continue
+            cap = str(row.get("capability", "") or "").strip()
+            if not cap:
+                continue
+            counts[cap] = counts.get(cap, 0) + 1
+        return counts
+
+    loaded: list[dict] = []
+    errors: list[dict] = []
+    for server_cfg in build_mcp_server_configs(mcp_servers if isinstance(mcp_servers, list) else []):
+        try:
+            adapter = MCPCapabilityAdapter(server_cfg, audit_hook=_audit_sink)
+            tools = adapter.load_tools()
+            for t in tools:
+                reg.register(t)
+            loaded.append({"server": server_cfg.name, "endpoint": server_cfg.endpoint, "tools": len(tools)})
+        except Exception as e:
+            errors.append({"server": server_cfg.name, "endpoint": server_cfg.endpoint, "error": str(e)[:240]})
+    return reg, {"servers": loaded, "errors": errors, "recent_success_tool_counts": _recent_success_tool_counts()}
+
+
+def _decide_intent_activation(task_prompt: str, runtime_cfg: dict[str, Any], adaptive_decision: dict[str, Any]) -> dict[str, Any]:
+    ia_cfg = runtime_cfg.get("intent_activation", {}) if isinstance(runtime_cfg.get("intent_activation", {}), dict) else {}
+    mode = str(ia_cfg.get("mode", runtime_cfg.get("tool_activation_mode", "on_demand"))).strip().lower()
+    profile = adaptive_decision.get("task_profile", {}) if isinstance(adaptive_decision.get("task_profile", {}), dict) else {}
+    text = (task_prompt or "").lower()
+    complexity = float(profile.get("complexity_score", 0.0) or 0.0)
+    requires_external = bool(profile.get("requires_external_tool", False))
+    requires_parallel = bool(profile.get("requires_parallel", False))
+    thresholds = ia_cfg.get("thresholds", {}) if isinstance(ia_cfg.get("thresholds", {}), dict) else {}
+    keywords = ia_cfg.get("keywords", {}) if isinstance(ia_cfg.get("keywords", {}), dict) else {}
+    signals = ia_cfg.get("signals", {}) if isinstance(ia_cfg.get("signals", {}), dict) else {}
+
+    def _kw(name: str) -> list[str]:
+        rows = keywords.get(name, [])
+        return [str(x).lower() for x in rows] if isinstance(rows, list) else []
+
+    def _hit(name: str) -> bool:
+        return any(k and (k in text) for k in _kw(name))
+
+    if mode == "always":
+        return {
+            "mode": mode,
+            "mcp_tools": True,
+            "skill_plugin": True,
+            "agent_plugin": True,
+            "llm_optimizer_plugin": True,
+            "reasons": {"all": "mode=always"},
+        }
+    if mode == "off":
+        return {
+            "mode": mode,
+            "mcp_tools": False,
+            "skill_plugin": False,
+            "agent_plugin": False,
+            "llm_optimizer_plugin": False,
+            "reasons": {"all": "mode=off"},
+        }
+
+    skill_threshold = float(thresholds.get("skill_complexity", 0.45))
+    agent_threshold = float(thresholds.get("agent_complexity", 0.62))
+    llm_threshold = float(thresholds.get("llm_optimizer_complexity", 0.55))
+
+    use_external_signal = bool(signals.get("use_requires_external_tool", True))
+    use_parallel_signal = bool(signals.get("use_requires_parallel", True))
+
+    mcp_tools = (requires_external if use_external_signal else False) or _hit("mcp_tools")
+    skill_plugin = (complexity >= skill_threshold) or _hit("skill_plugin")
+    agent_plugin = ((requires_parallel if use_parallel_signal else False) or (complexity >= agent_threshold) or _hit("agent_plugin"))
+    llm_optimizer_plugin = (complexity >= llm_threshold) or _hit("llm_optimizer_plugin")
+
+    return {
+        "mode": mode,
+        "mcp_tools": bool(mcp_tools),
+        "skill_plugin": bool(skill_plugin),
+        "agent_plugin": bool(agent_plugin),
+        "llm_optimizer_plugin": bool(llm_optimizer_plugin),
+        "reasons": {
+            "mcp_tools": "requires_external_tool_or_keyword",
+            "skill_plugin": "complexity_or_reuse_keyword",
+            "agent_plugin": "parallel_or_multi_agent_keyword",
+            "llm_optimizer_plugin": "complexity_or_optimize_keyword",
+        },
+    }
 
 
 def _build_plugins(
@@ -208,6 +330,7 @@ def execute_once(config_path: str | None = None, task_override: str | None = Non
     state_machine = ExecutionStateMachine()
     config = load_config(config_path)
     _setup_logging(config.get("logging", {}).get("level", "INFO"))
+    capability_registry_runtime, capability_state = _build_capability_layer(config)
     optimizer_state = StrategyOptimizer(config.get("optimization", {})).optimize(config)
     prompt_auto_cfg = ((config.get("optimization", {}) or {}).get("prompt_auto", {}) or {})
     prompt_optimizer = PromptAutoOptimizer(prompt_auto_cfg if isinstance(prompt_auto_cfg, dict) else {})
@@ -335,6 +458,14 @@ def execute_once(config_path: str | None = None, task_override: str | None = Non
             multi_agent_cfg = {**multi_agent_cfg, "max_rounds": int(overrides.get("multi_agent_max_rounds", 2))}
         runtime_cfg = {**runtime_cfg, "multi_agent": multi_agent_cfg}
 
+    intent_activation = _decide_intent_activation(task_prompt, runtime_cfg, adaptive_decision)
+    if "skill" in selected_plugins and not bool(intent_activation.get("skill_plugin", True)):
+        selected_plugins = [p for p in selected_plugins if p != "skill"]
+    if "agent" in selected_plugins and not bool(intent_activation.get("agent_plugin", True)):
+        selected_plugins = [p for p in selected_plugins if p != "agent"]
+    if "llm_optimizer" in selected_plugins and not bool(intent_activation.get("llm_optimizer_plugin", True)):
+        selected_plugins = [p for p in selected_plugins if p != "llm_optimizer"]
+
     plugin_manager, vector_store, run_logger = _build_plugins(
         config,
         llm_client,
@@ -346,6 +477,9 @@ def execute_once(config_path: str | None = None, task_override: str | None = Non
         vector_store=vector_store,
         skill_store=code_executor.skill_store,
     )
+    tools_enabled_for_task = bool(intent_activation.get("mcp_tools", False))
+    tool_activation_reason = "intent_activation.mcp_tools" if tools_enabled_for_task else "intent_activation.mcp_tools=false"
+    runtime_capabilities = capability_registry_runtime if tools_enabled_for_task else None
     plugin_manager.start()
 
     if dag_override:
@@ -398,8 +532,12 @@ def execute_once(config_path: str | None = None, task_override: str | None = Non
                 loop = ReActLoop(
                     llm=llm_client,
                     code_executor=code_executor,
+                    capabilities=runtime_capabilities,
                     event_bus=plugin_manager.event_bus,
                     max_steps=int(runtime_cfg.get("max_steps", 6)),
+                    tool_catalog_max_items=int(runtime_cfg.get("tool_catalog_max_items", 12)),
+                    tool_catalog_max_chars=int(runtime_cfg.get("tool_catalog_max_chars", 2400)),
+                    tool_preference=capability_state.get("recent_success_tool_counts", {}),
                 )
                 orchestrator = AgentOrchestrator(
                     planner=PlannerAgent(role="planner", profile=profiles.get("planner", {})),
@@ -419,14 +557,19 @@ def execute_once(config_path: str | None = None, task_override: str | None = Non
                         "memory": vector_store,
                         "memory_manager": memory_manager,
                         "original_task": task_prompt,
+                        "capabilities": runtime_capabilities,
                     },
                 )
             elif bool(runtime_cfg.get("react_enabled", True)):
                 loop = ReActLoop(
                     llm=llm_client,
                     code_executor=code_executor,
+                    capabilities=runtime_capabilities,
                     event_bus=plugin_manager.event_bus,
                     max_steps=int(runtime_cfg.get("max_steps", 6)),
+                    tool_catalog_max_items=int(runtime_cfg.get("tool_catalog_max_items", 12)),
+                    tool_catalog_max_chars=int(runtime_cfg.get("tool_catalog_max_chars", 2400)),
+                    tool_preference=capability_state.get("recent_success_tool_counts", {}),
                 )
                 result = loop.run(prompt, original_task=task_prompt)
             else:
@@ -498,6 +641,13 @@ def execute_once(config_path: str | None = None, task_override: str | None = Non
     result["state_history"] = state_machine.to_dict().get("history", [])
     if adaptive_decision:
         result["adaptive_decision"] = adaptive_decision
+    result["capabilities"] = {
+        "tools": capability_registry_runtime.list_tools(),
+        "state": capability_state,
+        "tools_enabled_for_task": tools_enabled_for_task,
+        "tool_activation_reason": tool_activation_reason,
+    }
+    result["intent_activation"] = intent_activation
     total_latency_ms = round((time.perf_counter() - root_started) * 1000, 2)
     result.setdefault("_metrics", {})["latency_ms"] = total_latency_ms
     if adaptive_enabled and adaptive_decision:

@@ -175,6 +175,9 @@ class AdaptiveDecisionEngine:
         return out or [{"strategy": "single_task", "plugins": ranked[:2], "arm_name": "single_task|default"}]
 
     def _arm_to_strategy(self, arm: str, profile: TaskProfile, exec_cfg: dict[str, Any]) -> tuple[bool, bool]:
+        # External-tool tasks benefit from ReAct single-task flow to allow runtime tool calls.
+        if profile.requires_external_tool and profile.risk_level not in {"high", "blocked"}:
+            return False, False
         if arm == "single_task":
             return False, False
         if arm == "planner_parallel":
@@ -188,6 +191,8 @@ class AdaptiveDecisionEngine:
             return False
         if profile.risk_level in {"high", "blocked"}:
             return False
+        if profile.requires_external_tool:
+            return True
         if strategy_arm != "single_task":
             return False
         if profile.requires_parallel or profile.time_sensitive:

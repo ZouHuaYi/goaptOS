@@ -1,17 +1,17 @@
 {
-  "updated_ts": 1772260650.4879785,
-  "runs_total": 77,
-  "runs_success": 73,
-  "runs_failed": 4,
-  "task_runs_total": 77,
-  "node_runs_total": 111,
-  "success_rate": 0.948051948051948,
-  "avg_latency_ms": 22284.14,
+  "updated_ts": 1772265551.7304115,
+  "runs_total": 85,
+  "runs_success": 79,
+  "runs_failed": 6,
+  "task_runs_total": 85,
+  "node_runs_total": 130,
+  "success_rate": 0.9294117647058824,
+  "avg_latency_ms": 27626.7,
   "avg_fix_rounds": 0.04,
   "top_error_types": [
     {
       "error_type": "unknown",
-      "count": 3
+      "count": 5
     },
     {
       "error_type": "max_fix_rounds_exceeded",
@@ -19,14 +19,6 @@
     }
   ],
   "recent_run_ids": [
-    "5f586875-87d8-478f-a7e1-084eab05e65b",
-    "3527ccd9-3063-431b-a6b9-6c368714cc0b",
-    "b4c3d103-efd7-46ac-9e37-36aa8c393f70",
-    "4143e224-335c-442c-a4ad-26ef06d2f834",
-    "f1705274-cc0d-48a0-adaa-0cba12d73d84",
-    "fba14f5c-0857-474c-8590-cf1a2a887560",
-    "28b53cfd-791c-4fa8-b1b4-1320ce9d694d",
-    "03edef53-7063-46aa-9716-713eb56bcc18",
     "ca8627cd-42f5-42f8-9bba-4a1217a81b28",
     "e3637682-1eee-4c23-a93b-e3f0d5d26750",
     "430d2c2e-5840-46de-a2f9-94c4d1a492af",
@@ -38,17 +30,17 @@
     "f95c5e11-d4df-4a15-b0ac-5acb51381e9c",
     "27eaefcd-9ad7-4b5c-99b5-ecf1cb83a5e4",
     "52e9967c-749b-48d2-9cf6-397b180eed16",
-    "224db2ec-93d8-4aae-a94e-d921f5652117"
+    "224db2ec-93d8-4aae-a94e-d921f5652117",
+    "1efb8158-566c-40a5-8154-ff6e13353f64",
+    "d37c9ac6-f8bf-4dbe-992a-05a91cffac65",
+    "0453b6ae-1520-414f-9a93-a3aae551cefa",
+    "09784e98-4900-4dc3-851c-347c1ed80348",
+    "4ea639bd-33f3-4802-ae05-e41522b5abcc",
+    "40f8af4b-379c-491f-b5d6-a3b0fa4484b1",
+    "3b2044b5-e934-45e2-97de-534e7e41aa67",
+    "326d6653-3407-440e-9a26-3bede28f1274"
   ],
   "recent_tasks": [
-    "请用 Python 计算 1+2 并打印结果",
-    "你爱吃什么",
-    "你喜欢吃什么",
-    "2+9 * 10 等于多少",
-    "你喜欢吃什么",
-    "你具备什么能力",
-    "你有那些agent",
-    "写一个 Python 函数，输入 n 返回前 n 个斐波那契数列",
     "写一段 Python 代码，打印一个未定义变量 x",
     "写一段 Python 代码，打印一个未定义变量 x（故意出错）",
     "写 Python 函数执行除法 a/b，并测试 b=0",
@@ -60,6 +52,14 @@
     "13是质数吗？",
     "向系统查询“判断质数”的相关技能或历史任务",
     "分析一组数字数据，生成统计报告，包括：\n1、最大值/最小值/平均值\n2、排序后前 5 个数字\n3、判断每个数字是否为质数\n4、汇总结果生成 Markdown 表格",
-    "分析一组数字数据，生成统计报告，包括：\n1、最大值/最小值/平均值\n2、排序后前 5 个数字\n3、判断每个数字是否为质数\n4、汇总结果生成 Markdown 表格"
+    "分析一组数字数据，生成统计报告，包括：\n1、最大值/最小值/平均值\n2、排序后前 5 个数字\n3、判断每个数字是否为质数\n4、汇总结果生成 Markdown 表格",
+    "分析一组数字数据，生成统计报告，包括：\n1、最大值/最小值/平均值\n2、排序后前 5 个数字\n3、判断每个数字是否为质数\n4汇总结果生成 Markdown 表格",
+    "分析一组数字数据，生成统计报告， 使用多任务来处理，包括：\n1、最大值/最小值/平均值\n2、排序后前 5 个数字\n3、判断每个数字是否为质数\n4、汇总结果生成 Markdown 表格",
+    "你具备什么能力，那些技能，能解决什么问题",
+    "你喜欢吃什么水果",
+    "我上个问题是什么",
+    "你能帮助我做什么",
+    "你能写一篇长篇小说吗100万字",
+    "[Relevant Past Conversation]\n- task_type: Self-capability Inquiry Task\nfailure_pattern: No failure observed; the task wa"
   ]
 }

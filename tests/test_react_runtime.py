@@ -2,6 +2,7 @@ from pathlib import Path
 import time
 
 from gtos.core.events import EventName
+from gtos.core.capability import CapabilityRuntimeRegistry, ToolCapability
 from gtos.memory.memory_manager import MemoryManager
 from gtos.core.event_bus import EventBus
 from gtos.runtime import ReflectionEngine, ReActLoop, parse_action
@@ -35,6 +36,80 @@ class _StubExecutor:
             "fix_rounds": 0,
             "code": "print(1+2)",
         }
+
+
+class _ToolOnlyLLM:
+    def __init__(self) -> None:
+        self.last_prompt = ""
+
+    def react_step(self, task_prompt: str, history: list[dict]) -> str:
+        self.last_prompt = task_prompt
+        if not history:
+            return '{"type":"tool_call","name":"mcp:test:echo","arguments":{"text":"hello"}}'
+        return '{"type":"finish","result":{"success":true,"stdout":"done"}}'
+
+
+class _EchoTool(ToolCapability):
+    def __init__(self) -> None:
+        super().__init__(name="mcp:test:echo", source="mcp:test", description="echo", input_schema={"type": "object"})
+
+    def execute(self, params: dict | None = None):
+        p = params or {}
+        return {"echo": p.get("text", "")}
+
+
+class _ToolA(ToolCapability):
+    def __init__(self) -> None:
+        super().__init__(
+            name="mcp:test:weather.query",
+            source="mcp:test",
+            description="query weather forecast",
+            input_schema={"type": "object", "properties": {"city": {"type": "string"}}},
+        )
+
+    def execute(self, params: dict | None = None):
+        return {"ok": True}
+
+
+class _ToolB(ToolCapability):
+    def __init__(self) -> None:
+        super().__init__(
+            name="mcp:test:figma.export_node",
+            source="mcp:test",
+            description="export figma design node",
+            input_schema={"type": "object", "properties": {"nodeId": {"type": "string"}}},
+        )
+
+    def execute(self, params: dict | None = None):
+        return {"ok": True}
+
+
+class _ToolC(ToolCapability):
+    def __init__(self) -> None:
+        super().__init__(
+            name="mcp:test:browser.read",
+            source="mcp:test",
+            description="browser tool",
+            input_schema={"type": "object", "properties": {"url": {"type": "string"}}},
+            constraints={"allowed_actions": ["read_file"]},
+        )
+
+    def execute(self, params: dict | None = None):
+        return {"ok": True}
+
+
+class _ToolD(ToolCapability):
+    def __init__(self) -> None:
+        super().__init__(
+            name="mcp:test:browser.export",
+            source="mcp:test",
+            description="browser tool",
+            input_schema={"type": "object", "properties": {"url": {"type": "string"}}},
+            constraints={"allowed_actions": ["export_node"]},
+        )
+
+    def execute(self, params: dict | None = None):
+        return {"ok": True}
 
 
 class _SkillStore:
@@ -71,6 +146,73 @@ def test_react_loop_runs_until_success() -> None:
     assert result["stdout"].strip() == "3"
     assert len(result.get("react_trace", [])) == 1
     assert events == ["thought", "action", "success"]
+
+
+def test_react_loop_supports_tool_call() -> None:
+    reg = CapabilityRuntimeRegistry()
+    reg.register(_EchoTool())
+    llm = _ToolOnlyLLM()
+    loop = ReActLoop(llm=llm, code_executor=_StubExecutor(), capabilities=reg, max_steps=3)
+    result = loop.run("use tool")
+    trace = result.get("react_trace", [])
+    assert len(trace) >= 2
+    first_obs = trace[0]["observation"]
+    assert first_obs.get("success") is True
+    assert first_obs.get("_tool_result", {}).get("echo") == "hello"
+    assert first_obs.get("_observation", {}).get("type") == "tool_call"
+    assert first_obs.get("_observation", {}).get("ok") is True
+    assert "[Available Tools]" in llm.last_prompt
+    assert "mcp:test:echo" in llm.last_prompt
+
+
+def test_react_loop_tool_catalog_prefers_relevant_tools() -> None:
+    reg = CapabilityRuntimeRegistry()
+    reg.register(_ToolA())
+    reg.register(_ToolB())
+    llm = _ToolOnlyLLM()
+    loop = ReActLoop(
+        llm=llm,
+        code_executor=_StubExecutor(),
+        capabilities=reg,
+        max_steps=1,
+        tool_catalog_max_items=1,
+    )
+    loop.run("请帮我导出 figma 节点")
+    assert "mcp:test:figma.export_node" in llm.last_prompt
+    assert "mcp:test:weather.query" not in llm.last_prompt
+
+
+def test_react_loop_tool_catalog_prefers_recent_success_tool() -> None:
+    reg = CapabilityRuntimeRegistry()
+    reg.register(_ToolA())
+    reg.register(_ToolB())
+    llm = _ToolOnlyLLM()
+    loop = ReActLoop(
+        llm=llm,
+        code_executor=_StubExecutor(),
+        capabilities=reg,
+        max_steps=1,
+        tool_catalog_max_items=1,
+        tool_preference={"mcp:test:weather.query": 8},
+    )
+    loop.run("query service")
+    assert "mcp:test:weather.query" in llm.last_prompt
+
+
+def test_react_loop_tool_catalog_permission_priority_boost() -> None:
+    reg = CapabilityRuntimeRegistry()
+    reg.register(_ToolC())
+    reg.register(_ToolD())
+    llm = _ToolOnlyLLM()
+    loop = ReActLoop(
+        llm=llm,
+        code_executor=_StubExecutor(),
+        capabilities=reg,
+        max_steps=1,
+        tool_catalog_max_items=1,
+    )
+    loop.run("please export_node from browser")
+    assert "mcp:test:browser.export" in llm.last_prompt
 
 
 def test_reflection_engine_persists_and_writes_memory(tmp_path: Path) -> None:

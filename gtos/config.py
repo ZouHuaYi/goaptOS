@@ -35,6 +35,27 @@ def _default_config() -> dict[str, Any]:
         "runtime": {
             "react_enabled": True,
             "max_steps": 6,
+            "tool_catalog_max_items": 12,
+            "tool_catalog_max_chars": 2400,
+            "tool_activation_mode": "on_demand",
+            "intent_activation": {
+                "mode": "on_demand",
+                "thresholds": {
+                    "skill_complexity": 0.45,
+                    "agent_complexity": 0.62,
+                    "llm_optimizer_complexity": 0.55,
+                },
+                "signals": {
+                    "use_requires_external_tool": True,
+                    "use_requires_parallel": True,
+                },
+                "keywords": {
+                    "mcp_tools": ["mcp:", "figma", "browser", "tool_call", "调用工具", "使用工具", "外部工具"],
+                    "skill_plugin": ["复用", "参考", "历史", "之前", "similar", "reuse", "context", "memory"],
+                    "agent_plugin": ["multi-agent", "多 agent", "协作", "并行", "round-robin", "debate"],
+                    "llm_optimizer_plugin": ["优化", "改写", "refine", "improve", "rewrite prompt"],
+                },
+            },
             "reflection_enabled": True,
             "reflection_file": str(data_dir / "reflections.jsonl"),
             "multi_agent": {
@@ -117,6 +138,9 @@ def _default_config() -> dict[str, Any]:
             "ab_mode": "shadow",
             "split_ratio": 0.5,
         },
+        "capabilities": {
+            "mcp_servers": [],
+        },
         "self_cognition": {
             "mode": "advise",
             "profile_file": str(data_dir / "cognition_profile.json"),
@@ -160,6 +184,18 @@ def _default_config() -> dict[str, Any]:
             },
         },
         "logging": {"level": "INFO"},
+        "chat": {
+            "session_store_file": str(data_dir / "chat_sessions.json"),
+            "keep_recent_messages": 10,
+            "compress_threshold": 14,
+            "max_context_chars": 3000,
+            "max_summary_chars": 1200,
+            "long_term": {
+                "enabled": True,
+                "top_k": 3,
+                "vector_persist_file": str(data_dir / "chat_vectors.json"),
+            },
+        },
         "default_task": "用 Python 打印 Hello from gtos 并计算 1+2",
         "llm": {
             "provider": "openai_compatible",
@@ -290,6 +326,18 @@ def _resolve_paths(cfg: dict[str, Any], root: Path) -> dict[str, Any]:
                 tp["market"] = market
             plugins["third_party"] = tp
         out["plugins"] = plugins
+    chat = out.get("chat", {})
+    if isinstance(chat, dict):
+        ssf = chat.get("session_store_file")
+        if isinstance(ssf, str) and ssf and not Path(ssf).is_absolute():
+            chat["session_store_file"] = str((root / ssf).resolve())
+        lt = chat.get("long_term", {})
+        if isinstance(lt, dict):
+            vpf = lt.get("vector_persist_file")
+            if isinstance(vpf, str) and vpf and not Path(vpf).is_absolute():
+                lt["vector_persist_file"] = str((root / vpf).resolve())
+            chat["long_term"] = lt
+        out["chat"] = chat
     return out
 
 
