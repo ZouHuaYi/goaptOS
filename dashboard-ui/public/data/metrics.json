@@ -1,12 +1,12 @@
 {
-  "updated_ts": 1772256037.8406453,
-  "runs_total": 61,
-  "runs_success": 59,
+  "updated_ts": 1772257572.107821,
+  "runs_total": 64,
+  "runs_success": 62,
   "runs_failed": 2,
-  "task_runs_total": 61,
-  "node_runs_total": 83,
-  "success_rate": 0.9672131147540983,
-  "avg_latency_ms": 15073.69,
+  "task_runs_total": 64,
+  "node_runs_total": 88,
+  "success_rate": 0.96875,
+  "avg_latency_ms": 17050.29,
   "avg_fix_rounds": 0.05,
   "top_error_types": [
     {
@@ -19,9 +19,6 @@
     }
   ],
   "recent_run_ids": [
-    "06e99cf5-4355-4b7c-9708-f4ae7c4ea7bc",
-    "f08e9cc3-b689-4fef-9ea4-8f8a8a8ac9e1",
-    "c370f743-9030-4dde-890b-53216741959e",
     "c4909c4a-3525-44bb-ab34-a2cd36691eaa",
     "455527ae-c479-499f-86a6-dcfa107843fb",
     "1fb6b4cc-365a-4519-bd65-30dc07727a93",
@@ -38,12 +35,12 @@
     "5f586875-87d8-478f-a7e1-084eab05e65b",
     "3527ccd9-3063-431b-a6b9-6c368714cc0b",
     "b4c3d103-efd7-46ac-9e37-36aa8c393f70",
-    "4143e224-335c-442c-a4ad-26ef06d2f834"
+    "4143e224-335c-442c-a4ad-26ef06d2f834",
+    "f1705274-cc0d-48a0-adaa-0cba12d73d84",
+    "fba14f5c-0857-474c-8590-cf1a2a887560",
+    "28b53cfd-791c-4fa8-b1b4-1320ce9d694d"
   ],
   "recent_tasks": [
-    "你具备什么能力",
-    "你具备什么能力",
-    "用 Python 计算 1+2 并打印结果",
     "你能连接网络吗",
     "用 Python 计算 1+2 并打印结果",
     "你能控制浏览器吗",
@@ -60,6 +57,9 @@
     "请用 Python 计算 1+2 并打印结果",
     "你爱吃什么",
     "你喜欢吃什么",
-    "2+9 * 10 等于多少"
+    "2+9 * 10 等于多少",
+    "你喜欢吃什么",
+    "你具备什么能力",
+    "你有那些agent"
   ]
 }
